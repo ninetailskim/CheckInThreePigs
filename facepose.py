@@ -42,6 +42,7 @@ plt.figure(figsize=(10,10))
 plt.imshow(img_mask2) 
 plt.axis('off') 
 plt.show()
+plt.close()
 
 mask_pairs = [1,4,7,9,11,14,17,25,20]
 shape = mask_img.shape

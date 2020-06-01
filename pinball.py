@@ -66,7 +66,6 @@ class leftBu(pg.sprite.Sprite):
         self.cur_angle -= self.speed
         if self.cur_angle < self.min_angle:
             self.cur_angle = self.min_angle
-            self.controlled = True
         self.image = pg.transform.rotate(self.timage, self.cur_angle)        
         if self.cur_angle > 90:
             return self.image, (0, - math.sin(degreeToRad(self.cur_angle - 90)) * self.trect.height)
@@ -114,7 +113,6 @@ class rightBu(pg.sprite.Sprite):
         self.cur_angle += self.speed
         if self.cur_angle > self.max_angle:
             self.cur_angle = self.max_angle
-            self.controlled = True
         self.image = pg.transform.rotate(self.timage, self.cur_angle)        
         if self.cur_angle < 270:
             return self.image, ( - math.cos(degreeToRad(270 - self.cur_angle)) * self.trect.height, -math.sin(degreeToRad(270 - self.cur_angle)) * self.trect.height)
@@ -208,8 +206,8 @@ def preprocess(img):
     righteye1 = [result[42][0], result[43][1]]
     righteye2 = [result[45][0], result[47][1]]
 
-    print(lefteye2[1] - lefteye1[1])
-    print(righteye2[1] - righteye1[1])
+    #print(lefteye2[1] - lefteye1[1])
+    #print(righteye2[1] - righteye1[1])
 
     left_img = img[lefteye1[1]:lefteye2[1]+1,lefteye1[0]:lefteye2[0],:]
     right_img = img[righteye1[1]:righteye2[1]+1,righteye1[0]:righteye2[0],:]
@@ -229,7 +227,7 @@ def makeMask(ss, res):
     windex = 1
 
     for start, end in bounder_pairs:
-        cv2.line(img_mask, tuple(res[start - 1]), tuple(res[end - 1]), windex, 20)
+        cv2.line(img_mask, tuple(res[start - 1]), tuple(res[end - 1]), windex, 15)
         windex += 1
         wlist.append((res[start - 1][1] - res[end - 1][1]) / ((res[start - 1][0] - res[end - 1][0]) + 0.01))
 
@@ -253,24 +251,28 @@ def cv2pygame(timg ,ss):
 
 def main():
     index = 0
-    #capture  = cv2.VideoCapture(0) 
-    capture  = cv2.VideoCapture('./test_sample.mov')
+    capture  = cv2.VideoCapture(0) 
+    #capture  = cv2.VideoCapture('./test_sample.mov')
 
     init = 'N'
     while init is 'N':
         ret, frame_rgb = capture.read()
         index += 1
-        print(index)
+        #print(index)
         result = module.keypoint_detection(images=[frame_rgb.copy()])[0]['data'][0]
         if len(result) == 0:
             continue
         else:
             cv2.imshow("Monitor", frame_rgb)
-            cv2.waitKey(30)
+            cv2.waitKey(10)
             init = input("Detected Your face, Use this face? Y/N")
-
+    cv2.destroyAllWindows()
     shape = frame_rgb.shape
+    #print(shape)
     tt = math.floor(max(shape[0],shape[1]) / 1000)
+    #print(tt)
+    if tt == 0:
+        tt = 1
     ss = (round(shape[1]/tt),round(shape[0]/tt))
     src_img = cv2.resize(frame_rgb, ss, interpolation=cv2.INTER_AREA)
 
@@ -290,11 +292,7 @@ def main():
     pg_img = cv2.cvtColor(src_img, cv2.COLOR_RGB2BGR)
 
     img_mask, wlist = makeMask(ss, result)
-
-    # plt.figure(figsize=(10,10))
-    # plt.imshow(img_mask) 
-    # plt.axis('off') 
-    # plt.show()
+    
     pg.init()
     size = ss
     screen = pg.display.set_mode(size)
@@ -311,17 +309,20 @@ def main():
 
     screen.blit(bg_img,(0,0))
 
-    ball = Ball("ball.gif",(0.47,10),img_mask,wlist, result[27][0], result[27][1])
-    lbou = leftBu("123.png", result[6][0], result[6][1], bolength, 7)
-    rbou = rightBu("123.png", result[10][0], result[10][1], bolength, 7)
+    ball = Ball("ball.gif",(0.47,5),img_mask,wlist, result[27][0], result[27][1])
+    lbou = leftBu("123.png", result[6][0], result[6][1], bolength, 15)
+    rbou = rightBu("123.png", result[10][0], result[10][1], bolength, 15)
     lbou.controlled = True
     rbou.controlled = True
     clock = pg.time.Clock()
 
     while True:
         ret, frame_rgb = capture.read() 
+
+        cv2.imshow("face", frame_rgb)
+        cv2.waitKey(10)
         index += 1
-        print(index)
+        #(index)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
         if frame_rgb is None:
@@ -335,9 +336,9 @@ def main():
             rTHist = calHist(nre)
 
             if cv2.compareHist(leftStandHist, lTHist, cv2.HISTCMP_CORREL) < 0.1:
-                lbou.controlled = True
-            if cv2.compareHist(rightStandHist, rTHist, cv2.HISTCMP_CORREL) < 0.1:
                 rbou.controlled = True
+            if cv2.compareHist(rightStandHist, rTHist, cv2.HISTCMP_CORREL) < 0.1:
+                lbou.controlled = True
 
             sur_limg = cv2pygame(nle, leftStandSize)
             sur_rimg = cv2pygame(nre, rightStandSize)
@@ -360,7 +361,7 @@ def main():
         timg.blit(rbou.image, rbou.rect)
         screen.blit(timg, (0,0))
         pg.display.flip()
-        clock.tick(100)
-
+        clock.tick(30)
+    pygame.quit()
 if __name__ == '__main__':
     main()
