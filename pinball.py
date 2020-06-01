@@ -198,15 +198,21 @@ class Ball(pg.sprite.Sprite):
         return 
 
 def preprocess(img):
-    result = np.array(module.keypoint_detection(images=[img])[0]['data'][0], dtype=np.int32)
+    result = module.keypoint_detection(images=[img])[0]['data'][0]
+    if len(result) == 0:
+        return None, None, None
+    result = np.array(result, dtype=np.int32)
 
     lefteye1 = [result[36][0], result[37][1]]
     lefteye2 = [result[39][0], result[41][1]]
     righteye1 = [result[42][0], result[43][1]]
     righteye2 = [result[45][0], result[47][1]]
 
-    left_img = img[lefteye1[1]:lefteye2[1],lefteye1[0]:lefteye2[0],:]
-    right_img = img[righteye1[1]:righteye2[1],righteye1[0]:righteye2[0],:]
+    print(lefteye2[1] - lefteye1[1])
+    print(righteye2[1] - righteye1[1])
+
+    left_img = img[lefteye1[1]:lefteye2[1]+1,lefteye1[0]:lefteye2[0],:]
+    right_img = img[righteye1[1]:righteye2[1]+1,righteye1[0]:righteye2[0],:]
 
     return result, left_img, right_img
 
@@ -223,7 +229,7 @@ def makeMask(ss, res):
     windex = 1
 
     for start, end in bounder_pairs:
-        cv2.line(img_mask, tuple(res[start - 1]), tuple(res[end - 1]), windex, 13)
+        cv2.line(img_mask, tuple(res[start - 1]), tuple(res[end - 1]), windex, 20)
         windex += 1
         wlist.append((res[start - 1][1] - res[end - 1][1]) / ((res[start - 1][0] - res[end - 1][0]) + 0.01))
 
@@ -237,6 +243,7 @@ def calHist(img):
     return hist
 
 def cv2pygame(timg ,ss):
+    #print(timg.shape)
     timg = cv2.resize(timg, (ss[1], ss[0]), interpolation=cv2.INTER_AREA)
     tpg_img = cv2.cvtColor(timg, cv2.COLOR_RGB2BGR)
     tpg_img = np.rot90(tpg_img,k=-1)
@@ -245,19 +252,22 @@ def cv2pygame(timg ,ss):
     return tpg_img
 
 def main():
-
+    index = 0
     #capture  = cv2.VideoCapture(0) 
     capture  = cv2.VideoCapture('./test_sample.mov')
 
-    ret, frame_rgb = capture.read()
-    cv2.imshow("Monitor", frame_rgb)
-    cv2.waitKey(0)
-    res = input("Use this face?")
-    while res is False:
+    init = 'N'
+    while init is 'N':
         ret, frame_rgb = capture.read()
-        cv2.imshow("Monitor", frame_rgb)
-        cv2.waitKey(0)
-        res = input("Use this face?")
+        index += 1
+        print(index)
+        result = module.keypoint_detection(images=[frame_rgb.copy()])[0]['data'][0]
+        if len(result) == 0:
+            continue
+        else:
+            cv2.imshow("Monitor", frame_rgb)
+            cv2.waitKey(30)
+            init = input("Detected Your face, Use this face? Y/N")
 
     shape = frame_rgb.shape
     tt = math.floor(max(shape[0],shape[1]) / 1000)
@@ -272,7 +282,7 @@ def main():
     rightStandSize = right_img.shape
     #leftStandHist = cv2.calcHist([left_img],[])
 
-    bolength = round(math.sqrt((result[6][1] - result[9][1]) ** 2 + (result[6][0] - result[9][0]) ** 2) * 3/5)
+    bolength = round(math.sqrt((result[6][1] - result[9][1]) ** 2 + (result[6][0] - result[9][0]) ** 2) * 1/2)
 
     #######
     #制作histgram
@@ -301,39 +311,43 @@ def main():
 
     screen.blit(bg_img,(0,0))
 
-    ball = Ball("ball.gif",(0.47,9),img_mask,wlist, result[27][0], result[27][1])
-    lbou = leftBu("123.png", result[6][0], result[6][1], bolength, 5)
-    rbou = rightBu("123.png", result[10][0], result[10][1], bolength, 5)
+    ball = Ball("ball.gif",(0.47,10),img_mask,wlist, result[27][0], result[27][1])
+    lbou = leftBu("123.png", result[6][0], result[6][1], bolength, 7)
+    rbou = rightBu("123.png", result[10][0], result[10][1], bolength, 7)
     lbou.controlled = True
     rbou.controlled = True
     clock = pg.time.Clock()
 
     while True:
         ret, frame_rgb = capture.read() 
+        index += 1
+        print(index)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
         if frame_rgb is None:
             break
-        
+        frame_rgb = cv2.resize(frame_rgb, ss, interpolation=cv2.INTER_AREA)
         nr, nle, nre = preprocess(frame_rgb)
         ######
         #cale histgram, decide how to caozuo
-        lTHist = calHist(nle)
-        rTHist = calHist(nre)
+        if len(nr) != 0:
+            lTHist = calHist(nle)
+            rTHist = calHist(nre)
 
-        if cv2.compareHist(leftStandHist, lTHist, cv2.HISTCMP_CORREL) < 0.1:
-            lbou.controlled = True
-        if cv2.compareHist(rightStandHist, rTHist, cv2.HISTCMP_CORREL) < 0.1:
-            rbou.controlled = True
+            if cv2.compareHist(leftStandHist, lTHist, cv2.HISTCMP_CORREL) < 0.1:
+                lbou.controlled = True
+            if cv2.compareHist(rightStandHist, rTHist, cv2.HISTCMP_CORREL) < 0.1:
+                rbou.controlled = True
 
-        sur_limg = cv2pygame(nle, leftStandSize)
-        sur_rimg = cv2pygame(nre, rightStandSize)
+            sur_limg = cv2pygame(nle, leftStandSize)
+            sur_rimg = cv2pygame(nre, rightStandSize)
         for event in pg.event.get():
             if event.type == pg.QUIT:
                 return 
         timg = bg_img.copy()
-        timg.blit(sur_limg, (result[36][0], result[37][1]))
-        timg.blit(sur_rimg, (result[42][0], result[43][1]))
+        if len(nr) != 0:
+            timg.blit(sur_limg, (result[36][0], result[37][1]))
+            timg.blit(sur_rimg, (result[42][0], result[43][1]))
         ball.update()
         lbou.update()
         rbou.update()
