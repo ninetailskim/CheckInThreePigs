@@ -166,9 +166,6 @@ def main():
         tb_image_frame = 0  # each frame can display ten pictures at most. 
 
     imid2path = dataset.get_imid2path()
-
-    jsonList = []
-
     for iter_id, data in enumerate(loader()):
         outs = exe.run(infer_prog,
                        feed=data,
@@ -189,7 +186,7 @@ def main():
                                     model.mask_head.resolution)
 
         # visualize result
-        im_ids = res['im_id'][0]    
+        im_ids = res['im_id'][0]
         for im_id in im_ids:
             image_path = imid2path[int(im_id)]
             image = Image.open(image_path).convert('RGB')
@@ -202,23 +199,6 @@ def main():
                     original_image_np,
                     tb_image_step,
                     dataformats='HWC')
-            
-            if FLAGS.output_to_json:
-                import json
-                tmp = []
-                for dt in np.array(bbox_results):
-                    if int(im_id) != dt['image_id']:
-                        continue
-                    catid, bbox, score = dt['category_id'], dt['bbox'], dt['score']
-                    if score < FLAGS.draw_threshold:
-                        continue
-                    xmin, ymin, w, h = bbox
-                    xmax = xmin + w
-                    ymax = ymin + h
-
-                    tmp.append([catid2name[catid], score, xmin, xmax, ymin, ymax])
-
-                jsonList.append([os.path.basename(image_path),tmp])
 
             image = visualize_results(image,
                                       int(im_id), catid2name,
@@ -241,9 +221,6 @@ def main():
             save_name = get_save_image_name(FLAGS.output_dir, image_path)
             logger.info("Detection bbox results save in {}".format(save_name))
             image.save(save_name, quality=95)
-    
-    with open('res.json','a') as fp:
-        fp.write(json.dumps(jsonList))
 
 
 if __name__ == '__main__':
@@ -278,10 +255,5 @@ if __name__ == '__main__':
         type=str,
         default="tb_log_dir/image",
         help='Tensorboard logging directory for image.')
-    parser.add_argument(
-        '--output_to_json',
-        type=str,
-        default=".",
-    )
     FLAGS = parser.parse_args()
     main()
