@@ -25,7 +25,7 @@ if parent_path not in sys.path:
 import glob
 import numpy as np
 from PIL import Image
-
+import json
 from paddle import fluid
 
 from ppdet.core.workspace import load_config, merge_config, create
@@ -206,20 +206,21 @@ def main():
                     dataformats='HWC')
             
             if FLAGS.output_to_json:
-                import json
+                
                 tmp = []
                 print(len(bbox_results))
                 for dt in np.array(bbox_results):
+                    print(int(im_id), dt['image_id'])
                     if int(im_id) != dt['image_id']:
                         continue
-                    catid, bbox, score = dt['category_id'], dt['bbox'], dt['score']
-                    if score < FLAGS.draw_threshold:
+                    tcatid, tbbox, tscore = dt['category_id'], dt['bbox'], dt['score']
+                    if tscore < FLAGS.draw_threshold:
                         continue
-                    xmin, ymin, w, h = bbox
+                    xmin, ymin, w, h = tbbox
                     xmax = xmin + w
                     ymax = ymin + h
 
-                    tmp.append([ttt[catid2name[catid]], score, xmin, xmax, ymin, ymax])
+                    tmp.append([ttt[catid2name[tcatid]], tscore, xmin, xmax, ymin, ymax])
 
                 jsonList.append([os.path.basename(image_path).split(".")[0],tmp])
 
@@ -245,8 +246,7 @@ def main():
             logger.info("Detection bbox results save in {}".format(save_name))
             image.save(save_name, quality=95)
     
-    with open('res.json','a') as fp:
-        fp.write(json.dumps(jsonList))
+    json.dump(jsonList, open('res.json','w'))
 
 
 if __name__ == '__main__':
