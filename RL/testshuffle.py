@@ -1,19 +1,23 @@
 import numpy as np
 
-a = np.array([1,2,3,4,5,6,7,8,9,0])
-b = np.array([1,2,3,4,5,6,7,8,9,0])
-c = np.array([1,2,3,4,5,6,7,8,9,0])
+a = np.array([[1,2],[3,4],[5,6]])
+b = np.array([[1],[2],[3]])
+c = np.array([[[1,2],[3,4]],[[5,6],[7,8]],[[9,0],[11,10]]])
 
-d = []
+print(a.shape)
+print(b.shape)
+print(c.shape)
 
-d.extend(a)
-d.extend(b)
+# abc = np.stack((a,b,c), axis=0)
 
-#x = np.vstack(a,b,c)
+# print(abc)
 
-#print(x)
-print(d)
+abc = zip(a,b,c)
+labc = list(abc)
+for aa in labc:
+    print(aa)
 
-x = np.stack((a,b,c),axis=0)
-
-print(x)
+import random
+random.shuffle(labc)
+for aa in labc:
+    print(aa)
