@@ -103,7 +103,7 @@ def run_episode(env, agent):
     while True:
 
         obs = preprocess(obs) # from shape (210, 160, 3) to (100800,)
-        obs_list.append(obs - last_obs)
+        obs_list.append(np.concatenate((np.obs,last_obs), axis=0))
         last_obs = obs
         action = agent.sample(obs) # 采样动作
         action_list.append(action)
@@ -126,7 +126,7 @@ def evaluate(env, agent, render=False):
         last_obs = np.zeros((1,80,80))
         while True:
             obs = preprocess(obs) # from shape (210, 160, 3) to (100800,)
-            action = agent.predict(obs - last_obs) # 选取最优动作
+            action = agent.predict(np.concatenate((np.obs,last_obs), axis=0)) # 选取最优动作
             last_obs = obs
             obs, reward, isOver, _ = env.step(action)
             episode_reward += reward
