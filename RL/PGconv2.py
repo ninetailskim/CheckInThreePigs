@@ -7,6 +7,7 @@ import parl
 from parl import layers
 from parl.utils import logger
 import random
+import copy
 
 
 LEARNING_RATE = 0.005
@@ -19,9 +20,9 @@ class Model(parl.Model):
         self.fc1 = layers.fc(size=hid1_size, act='tanh')
         self.conv1 = layers.conv2d(num_filters=2, filter_size=3, act='relu')
         self.fc2 = layers.fc(size=act_dim, act='softmax')
-        self.conv2 = layers.conv2d(num_filters=2, filter_size=3)
-        self.conv3 = layers.conv2d(num_filters=2, filter_size=3)
-        self.conv4 = layers.conv2d(num_filters=1, filter_size=3)
+        self.conv2 = layers.conv2d(num_filters=2, filter_size=[3,3], act='tanh')
+        self.conv3 = layers.conv2d(num_filters=2, filter_size=[3,3], act='tanh')
+        self.conv4 = layers.conv2d(num_filters=1, filter_size=[3,3], act='tanh')
         
 
     def forward(self, obs):  # 可直接用 model = Model(5); model(obs)调用
@@ -103,8 +104,10 @@ def run_episode(env, agent):
     while True:
 
         obs = preprocess(obs) # from shape (210, 160, 3) to (100800,)
-        obs_list.append(np.concatenate((np.obs,last_obs), axis=0))
-        last_obs = obs
+        #obs_list.append(np.concatenate((obs,last_obs), axis=0))
+        #last_obs = copy.deepcopy(obs)
+        obs_list.append(obs + last_obs)
+        last_obs=obs
         action = agent.sample(obs) # 采样动作
         action_list.append(action)
 
@@ -126,7 +129,7 @@ def evaluate(env, agent, render=False):
         last_obs = np.zeros((1,80,80))
         while True:
             obs = preprocess(obs) # from shape (210, 160, 3) to (100800,)
-            action = agent.predict(np.concatenate((np.obs,last_obs), axis=0)) # 选取最优动作
+            action = agent.predict(obs + last_obs) # 选取最优动作
             last_obs = obs
             obs, reward, isOver, _ = env.step(action)
             episode_reward += reward

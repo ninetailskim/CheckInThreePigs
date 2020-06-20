@@ -121,7 +121,11 @@ def evaluate(env, agent, render=False):
         obs = env.reset()
         episode_reward = 0
         while True:
+           
             obs = preprocess(obs) # from shape (210, 160, 3) to (100800,)
+            print(obs.shape)
+            print(np.concatenate((obs,obs), axis=0).shape)
+            input()
             action = agent.predict(obs) # 选取最优动作
             obs, reward, isOver, _ = env.step(action)
             episode_reward += reward
