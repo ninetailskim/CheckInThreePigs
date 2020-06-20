@@ -197,3 +197,4 @@ while i < 3000:
 # save the parameters to ./model.ckpt
     if i % 100 == 0:    
         agent.save('./model2rd_'+ str(LEARNING_RATE) + '_' + str(i) +'.ckpt')
+        
