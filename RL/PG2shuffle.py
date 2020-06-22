@@ -163,10 +163,15 @@ if os.path.exists('./model2_0.005_900.ckpt'):
 
 NE = 2
 i = 0
+
 while i < 3000:
     obs_list, action_list, reward_list = [], [], []
-    for i in range(NE):
+    for ii in range(NE):
         tobs_list, taction_list, treward_list = run_episode(env, agent)
+
+        while np.sum(treward_list) < min(-(20 - i / 20),-10):
+            tobs_list, taction_list, treward_list = run_episode(env, agent)
+            print("retry: i ",i, " reward:", np.sum(treward_list))
         obs_list.extend(tobs_list)
         action_list.extend(taction_list)
         reward_list.extend(calc_reward_to_go(treward_list))

@@ -1,1 +1,28 @@
 https://storage.googleapis.com/kaggle-data-sets/2709/38454/compressed/melb_data.csv.zip?GoogleAccessId=web-data@kaggle-161607.iam.gserviceaccount.com&Expires=1589783687&Signature=EwJSDxS8XHxqTV0Z%2FBRnfF0JcFH0B6M6miZ3rbwDEwXQ1D2R8ipzfVgeh6vRVqLkUQ35Jw11GqqkDRdVUOIYRxvkSUXMFr9rY%2FFVFd%2F8VsFIYOnwdK7OYCKV3GtBQu8a5GNit1VMv8heaPIGfrcL2jJ48dPrAlnwO3fKO9KinMezTv%2BGxWDQG49RWOG240UxKAZoNCAxX8GJNOGHPOK9JHVVJYjvDSX8u55qIdg7tH7SGTRqzZ5U132YcJLXfFHlU9YJfm7saKoNjRQbaEGnPFGw8KumWIh6q0LXCsrLlWi14p%2FWTEWLBDknveCPaYdA3uU%2BBImR8oK1jjQSo3MoBQ%3D%3D&response-content-disposition=attachment%3B+filename%3Dmelb_data.csv.zip
+
+### 评论区大佬的方法没看懂，总觉得改输入并不是从源头解决问题，实难苟同
+### 自己试了一些，不过全都是改algorithm中_critic_learn的
+### 科科老师说让四个电压相同，我首先的想法是把四个电压的差值加到评论家的cost上
+### 试了下面四种：
+---
+fourmean = layers.reduce_mean(action, dim=1)   
+fourdiff = fluid.layers.abs(action[:,0] - fourmean) + fluid.layers.abs(action[:,1] - fourmean)  + fluid.layers.abs(action[:,2] - fourmean)  + fluid.layers.abs(action[:,3] - fourmean)   
+cost = cost + layers.reduce_mean(fourdiff)    
+---
+fourmean = layers.reduce_mean(action, dim=1)   
+fourdiff = fluid.layers.abs(action[:,0] - fourmean) + fluid.layers.abs(action[:,1] - fourmean)  + fluid.layers.abs(action[:,2] - fourmean)  + fluid.layers.abs(action[:,3] - fourmean)   
+cost = cost + layers.reduce_mean(fourdiff) * 0.3
+---
+fourmean = layers.reduce_mean(action, dim=1)   
+fourdiff = fluid.layers.square_error_cost(action[:,0],fourmean) + fluid.layers.square_error_cost(action[:,1],fourmean)  + fluid.layers.square_error_cost(action[:,2] ,fourmean)  + fluid.layers.square_error_cost(action[:,3] , fourmean)   
+cost = cost + layers.reduce_mean(fourdiff)    
+---
+fourmean = layers.reduce_mean(action, dim=1)   
+fourdiff = fluid.layers.square_error_cost(action[:,0],fourmean) + fluid.layers.square_error_cost(action[:,1],fourmean)  + fluid.layers.square_error_cost(action[:,2] ,fourmean)  + fluid.layers.square_error_cost(action[:,3] , fourmean)   
+cost = cost + layers.reduce_mean(fourdiff) * 0.3   
+---
+### 其实就是一个用绝对值，一个用均方差，然后试了加了个调节新增的cost的缩放因子0.3   
+### 效果都不好，我是绝望的，见Cell72   
+
+   
+### 我和我最后的倔强，决定试一试评论区大佬的方法.....emmmm，虽然对方法的原理保持怀疑，但还是希望真香吧
