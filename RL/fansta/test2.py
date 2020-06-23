@@ -24,17 +24,20 @@ GAMMA = 0.99
 
 class Model(parl.Model):
     def __init__(self, act_dim):
+        hid0_size = 64
         hid1_size = 32
         hid2_size = 16
         # 3层全连接网络
-        self.fc1 = layers.fc(size=hid1_size, act='relu')
-        self.fc2 = layers.fc(size=hid2_size, act='relu')
-        self.fc3 = layers.fc(size=act_dim, act=None)
+        self.fc0 = layers.fc(size=hid0_size, act='relu', name="fc0")
+        self.fc1 = layers.fc(size=hid1_size, act='relu', name="fc1")
+        self.fc2 = layers.fc(size=hid2_size, act='relu', name="fc2")
+        self.fc3 = layers.fc(size=act_dim, act=None, name="fc3")
 
     def value(self, obs):
         # 定义网络
         # 输入state，输出所有action对应的Q，[Q(s,a1), Q(s,a2), Q(s,a3)...]
-        h1 = self.fc1(obs)
+        h0 = self.fc0(obs)
+        h1 = self.fc1(h0)
         h2 = self.fc2(h1)
         Q = self.fc3(h2)
         return Q
@@ -256,9 +259,13 @@ def evaluate(agent):
         while True:
             action = agent.predict(obs)
             observation = env.getScreenRGB()
+            score  = env.score()
             #action = agent.pickAction(reward, observation)
+            observation = cv2.transpose(observation)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            observation = cv2.putText(observation, str(int(score)), (0, 25), font, 1.2, (255, 255, 255), 2)
             cv2.imshow("ss", observation)
-            cv2.waitKey(5)  # 预测动作，只选最优动作
+            cv2.waitKey(10)  # 预测动作，只选最优动作
             reward= env.act(actionset[action])
             obs = list(env.getGameState().values())
             done = env.game_over()
@@ -302,6 +309,8 @@ episode = 0
 
 ps = datetime.now()
 
+evmax = 0
+
 while episode < max_episode:  # 训练max_episode个回合，test部分不计算入episode数量
     # train part
     start = datetime.now()
@@ -315,6 +324,7 @@ while episode < max_episode:  # 训练max_episode个回合，test部分不计算
         episode, (end-start).seconds, agent.e_greed, eval_reward))
 
 # 训练结束，保存模型
-    if episode % 10000 == 0:
-        save_path = './dqn_model_' + str(episode) + '.ckpt'
+    if eval_reward > evmax:
+        save_path = './model_' + str(episode) + '_' + str(eval_reward) + '.ckpt'
         agent.save(save_path)
+        evmax = eval_reward
