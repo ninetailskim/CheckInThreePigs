@@ -8,13 +8,16 @@ import paddle.fluid as fluid
 from paddle.fluid.dygraph.nn import Conv2D, Pool2D, Linear, BatchNorm
 
 from paddlex.det import transforms
+import shutil
 
+shutil.rmtree("images")
+input()
 os.makedirs("images", exist_ok=True)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--n_epochs", type=int, default=200, help="number of epochs of training")
 parser.add_argument("--batch_size", type=int, default=64, help="size of the batches")
-parser.add_argument("--lr", type=float, default=0.0002, help="adam: learning rate")
+parser.add_argument("--lr", type=float, default=0.0001, help="adam: learning rate")
 parser.add_argument("--b1", type=float, default=0.5, help="adam: decay of first order momentum of gradient")
 parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
 parser.add_argument("--n_cpu", type=int, default=8, help="number of cpu threads to use during batch generation")
@@ -42,7 +45,7 @@ class Gblock(fluid.dygraph.Layer):
         out = self.fc(x)
         if self.is_normalize:
             out = self.bn(out)
-        out = fluid.layers.leaky_relu(x=out, alpha=0.1)
+        out = fluid.layers.leaky_relu(x=out, alpha=0.2)
         return out         
 
 class Generator(fluid.dygraph.Layer):
@@ -70,7 +73,7 @@ class Generator(fluid.dygraph.Layer):
             x = _layer(x)
         out = self.fc(x)
         out = fluid.layers.tanh(x=out)
-        out = fluid.layers.reshape(x=out, shape=img_shape)
+        out = fluid.layers.reshape(x=out, shape=[0,28,28,1])
         return out
 
 class Discriminator(fluid.dygraph.Layer):
@@ -94,16 +97,21 @@ class Discriminator(fluid.dygraph.Layer):
 
 trainset = paddle.dataset.mnist.train()
 allCompose = transforms.Compose([transforms.Resize(target_size=opt.img_size), transforms.Normalize([0.5],[0.5])])
-batch_reader = paddle.batch(trainset, batch_size=1)
-
+batch_reader = paddle.batch(trainset, batch_size=opt.batch_size)
+shuffle = paddle.fluid.io.shuffle(batch_reader, 64)
 def proprecess(img):
-    img = np.array(img[0])
-    mu = np.mean(img)
-    sigma = np.std(img)
-    res = (img - mu) / sigma
-    return np.expand_dims(res, axis=0)
+    # img = np.array(img[0])
+    # mu = np.mean(img)
+    # sigma = np.std(img)
+    # img = (img - mu) / sigma
+    # img = np.expand_dims(img, axis=0)
+    img = np.array([i[0] for i in img], dtype="float32")
+    mu = np.expand_dims(np.mean(img, axis=1), axis=-1)
+    sigma = np.expand_dims(np.std(img, axis=1), axis=-1)
+    img = (img - mu) / sigma
+    return img
 
-x_reader = paddle.reader.xmap_readers(proprecess, trainset, process_num=4, buffer_size=8192)
+x_reader = paddle.reader.xmap_readers(proprecess, shuffle, process_num=4, buffer_size=512)
 
 adversarial_loss = fluid.dygraph.BCELoss()
 import cv2
@@ -111,45 +119,62 @@ import cv2
 
 def train(generator, discriminator):
     with fluid.dygraph.guard():
-        
-        
-        optimizer_G = fluid.optimizer.Adam(parameter_list=generator.parameters(), learning_rate=opt.lr, beta1=opt.b1, beta2=opt.b2)
+        generator.train()
+        discriminator.train()
+
+        # total_steps = (int(60000//BATCH_SIZE) + 1) * EPOCH_NUM
+        # lr = fluid.dygraph.PolynomialDecay(0.01, total_steps, 0.001)
+
+        optimizer_G = fluid.optimizer.Adam(parameter_list=generator.parameters(), learning_rate=opt.lr * 10, beta1=opt.b1, beta2=opt.b2)
         optimizer_D = fluid.optimizer.Adam(parameter_list=discriminator.parameters(), learning_rate=opt.lr, beta1=opt.b1, beta2=opt.b2)
         for epoch in range(opt.n_epochs):
             for i, imgs in enumerate(x_reader()):
                 # print(imgs)
                 # print()
-                generator.train()
-                discriminator.eval()
+                
+                # discriminator.eval()
                 valid = fluid.dygraph.to_variable(np.ones((imgs.shape[0], 1),dtype='float32'))
-                valid.detach()
+                valid.stop_gradient = True
                 fake = fluid.dygraph.to_variable(np.zeros((imgs.shape[0], 1),dtype='float32'))
-                fake.detach()
+                fake.stop_gradient = True
 
                 real_imgs = fluid.dygraph.to_variable(imgs)
-
-                generator.clear_gradients()
+                
                 z = fluid.dygraph.to_variable(np.array(np.random.normal(0, 1, (imgs.shape[0], opt.latent_dim)), dtype='float32'))
 
                 gen_imgs = generator(z)
-                g_loss = adversarial_loss(discriminator(gen_imgs.detach()), valid)
+                g_loss = adversarial_loss(discriminator(gen_imgs), valid)
                 g_loss.backward()
                 optimizer_G.minimize(g_loss)
-                discriminator.train()
-                discriminator.clear_gradients()
-                real_loss = adversarial_loss(discriminator(real_imgs), valid)
-                fake_loss = adversarial_loss(discriminator(gen_imgs.detach()), fake)
+                generator.clear_gradients()
 
-                d_loss = (real_loss + fake_loss) / 2
+                if i % 5 == 0:
+                    # discriminator.train()
+                    
+                    real_loss = adversarial_loss(discriminator(real_imgs), valid)
+                    fake_loss = adversarial_loss(discriminator(gen_imgs.detach()), fake)
 
-                d_loss.backward()
-                optimizer_D.minimize(d_loss)
+                    d_loss = (real_loss + fake_loss) / 2
 
-                print("[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]" % (epoch, opt.n_epochs, i, 10, d_loss.numpy(), g_loss.numpy()))
+                    d_loss.backward()
+                    optimizer_D.minimize(d_loss)
+                    discriminator.clear_gradients()
 
-                batches_done = epoch * 10 + i
+                    print("[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]" % (epoch, opt.n_epochs, i, 10, d_loss.numpy(), g_loss.numpy()))
+
+                cv2.imshow("ss", gen_imgs[0].numpy())
+                cv2.waitKey(1)
+                
+                batches_done = epoch + i
                 if batches_done % opt.sample_interval == 0:
-                    cv2.imwrite("images/%d.png" % batches_done, np.squeeze(gen_imgs.numpy()))      
+                    for bi in range(opt.batch_size):
+                        # print(gen_imgs.shape)
+                        # print(gen_imgs[i].shape)
+                        # print(np.squeeze(gen_imgs[i].numpy()).shape)
+                        cv2.imwrite("images/%d_%d.png" % (batches_done, i), gen_imgs[bi].numpy())      
+            
+            fluid.save_dygraph(generator.state_dict(), './checkpoint/G_epoch{}'.format(epoch))
+            fluid.save_dygraph(discriminator.state_dict(), './checkpoint/D_epoch{}'.format(epoch))
         
 #gpu_place = fluid.CUDAPlace(0)
 with fluid.dygraph.guard():
