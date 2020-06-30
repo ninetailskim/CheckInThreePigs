@@ -35,10 +35,10 @@ class Gblock(fluid.dygraph.Layer):
     def __init__(self, in_feat, out_feat, is_normalize=True):
         super(Gblock, self). __init__()
         self.fc = Linear(in_feat, out_feat)
-        self.bn = BatchNorm(out_feat, 0.8)
+        self.bn = BatchNorm(out_feat)
         self.is_normalize = is_normalize
 
-    def forward(self, x, normalize=True):
+    def forward(self, x):
         out = self.fc(x)
         if self.is_normalize:
             out = self.bn(out)
@@ -62,11 +62,13 @@ class Generator(fluid.dygraph.Layer):
 
     def forward(self, x):
         # out = self.model(x)
-        out = self.Gblock_0(x)
-        out = self.Gblock_1(out)
-        out = self.Gblock_2(out)
-        out = self.Gblock_3(out)
-        out = self.fc(out)
+        # out = self.Gblock_0(x)
+        # out = self.Gblock_1(out)
+        # out = self.Gblock_2(out)
+        # out = self.Gblock_3(out)
+        for _layer in self.model:
+            x = _layer(x)
+        out = self.fc(x)
         out = fluid.layers.tanh(x=out)
         out = fluid.layers.reshape(x=out, shape=img_shape)
         return out
@@ -80,7 +82,7 @@ class Discriminator(fluid.dygraph.Layer):
         self.fc3 = Linear(256, 1)
 
     def forward(self, x):
-        out = fluid.layers.reshape(x=x, shape=[x.shape(0), -1])
+        out = fluid.layers.reshape(x=x, shape=[x.shape[0], -1])
         out = self.fc1(out)
         out = fluid.layers.leaky_relu(x=out, alpha=0.2)
         out = self.fc2(out)
@@ -109,30 +111,31 @@ import cv2
 
 def train(generator, discriminator):
     with fluid.dygraph.guard():
-        generator.train()
-        discriminator.train()
+        
+        
         optimizer_G = fluid.optimizer.Adam(parameter_list=generator.parameters(), learning_rate=opt.lr, beta1=opt.b1, beta2=opt.b2)
         optimizer_D = fluid.optimizer.Adam(parameter_list=discriminator.parameters(), learning_rate=opt.lr, beta1=opt.b1, beta2=opt.b2)
         for epoch in range(opt.n_epochs):
-            print(epoch)
             for i, imgs in enumerate(x_reader()):
-                print(i)
                 # print(imgs)
                 # print()
-                valid = fluid.dygraph.to_variable(np.ones((imgs.shape[0], 1)))
+                generator.train()
+                discriminator.eval()
+                valid = fluid.dygraph.to_variable(np.ones((imgs.shape[0], 1),dtype='float32'))
                 valid.detach()
-                fake = fluid.dygraph.to_variable(np.zeros((imgs.shape[0], 1)))
+                fake = fluid.dygraph.to_variable(np.zeros((imgs.shape[0], 1),dtype='float32'))
                 fake.detach()
 
                 real_imgs = fluid.dygraph.to_variable(imgs)
 
                 generator.clear_gradients()
-                z = fluid.dygraph.to_variable(np.random.normal(0, 1, (imgs.shape[0], opt.latent_dim)))
+                z = fluid.dygraph.to_variable(np.array(np.random.normal(0, 1, (imgs.shape[0], opt.latent_dim)), dtype='float32'))
+
                 gen_imgs = generator(z)
-                g_loss = adversarial_loss(discriminator(gen_imgs), valid)
+                g_loss = adversarial_loss(discriminator(gen_imgs.detach()), valid)
                 g_loss.backward()
                 optimizer_G.minimize(g_loss)
-
+                discriminator.train()
                 discriminator.clear_gradients()
                 real_loss = adversarial_loss(discriminator(real_imgs), valid)
                 fake_loss = adversarial_loss(discriminator(gen_imgs.detach()), fake)
@@ -146,14 +149,10 @@ def train(generator, discriminator):
 
                 batches_done = epoch * 10 + i
                 if batches_done % opt.sample_interval == 0:
-                    cv2.imwrite("images/%d.png" % batches_done, gen_imgs.numpy())      
+                    cv2.imwrite("images/%d.png" % batches_done, np.squeeze(gen_imgs.numpy()))      
         
-print("0")
 #gpu_place = fluid.CUDAPlace(0)
-print("1")
 with fluid.dygraph.guard():
-    print("2")
     generator = Generator("Generator")
     discriminator = Discriminator("Discriminator")
-    print("3")
 train(generator, discriminator)
