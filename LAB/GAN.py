@@ -122,11 +122,11 @@ def train(generator, discriminator):
         generator.train()
         discriminator.train()
 
-        # total_steps = (int(60000//BATCH_SIZE) + 1) * EPOCH_NUM
-        # lr = fluid.dygraph.PolynomialDecay(0.01, total_steps, 0.001)
+        total_steps = 935 * opt.n_epochs
+        lr = fluid.dygraph.PolynomialDecay(0.001, total_steps, 0.0001)
 
-        optimizer_G = fluid.optimizer.Adam(parameter_list=generator.parameters(), learning_rate=opt.lr * 10, beta1=opt.b1, beta2=opt.b2)
-        optimizer_D = fluid.optimizer.Adam(parameter_list=discriminator.parameters(), learning_rate=opt.lr, beta1=opt.b1, beta2=opt.b2)
+        optimizer_G = fluid.optimizer.Adam(parameter_list=generator.parameters(), learning_rate=lr, beta1=opt.b1, beta2=opt.b2)
+        optimizer_D = fluid.optimizer.Adam(parameter_list=discriminator.parameters(), learning_rate=opt.lr / 10, beta1=opt.b1, beta2=opt.b2)
         for epoch in range(opt.n_epochs):
             for i, imgs in enumerate(x_reader()):
                 # print(imgs)
