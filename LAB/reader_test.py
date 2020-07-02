@@ -8,6 +8,18 @@ import paddle.fluid as fluid
 from paddle.fluid.dygraph.nn import Conv2D, Pool2D, Linear, BatchNorm
 import cv2
 
+a = np.ones([28,28,1], dtype="float32")
+b = np.ones([28,28,1], dtype="float32")
+c = np.concatenate([a,b], axis=1)
+print(a.shape)
+print(b.shape)
+print(c.shape)
+
+aa = [np.ones([28,28,1], dtype="float32") for i in range(5)]
+bb = np.concatenate(aa[:3], axis=1)
+print(bb.shape)
+input()
+
 trainset = paddle.dataset.mnist.train()
 batch_reader = paddle.batch(trainset, batch_size=2)
 

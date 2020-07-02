@@ -9,8 +9,8 @@ from paddle.fluid.dygraph.nn import Conv2D, Pool2D, Linear, BatchNorm
 
 from paddlex.det import transforms
 import shutil
-
-shutil.rmtree("images")
+if os.path.exists("images"):
+    shutil.rmtree("images")
 input()
 os.makedirs("images", exist_ok=True)
 
@@ -162,9 +162,24 @@ def train(generator, discriminator):
 
                     print("[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]" % (epoch, opt.n_epochs, i, 10, d_loss.numpy(), g_loss.numpy()))
 
-                cv2.imshow("ss", gen_imgs[0].numpy())
-                cv2.waitKey(1)
+                # print(gen_imgs.shape[0])
+                timg = [gen_imgs[ti].numpy() for ti in range(gen_imgs.shape[0])]
+                # print(timg[0].shape)
                 
+                trow = []
+                for ti in range(gen_imgs.shape[0] // 8):
+                    # print(ti)
+                    trow.append(np.concatenate(timg[ti*8:ti*8+8],axis=0))
+                # print("concat 1")
+                tre = np.concatenate(trow, axis=1)
+                cv2.imshow("ss", tre)
+                # print(tre.shape)
+                cv2.waitKey(1)
+                img = gen_imgs[0].numpy()
+                img = cv2.resize(img, (280,280))
+                cv2.imshow("ss2", img)
+                cv2.waitKey(1)
+
                 batches_done = epoch + i
                 if batches_done % opt.sample_interval == 0:
                     for bi in range(opt.batch_size):
@@ -180,4 +195,5 @@ def train(generator, discriminator):
 with fluid.dygraph.guard():
     generator = Generator("Generator")
     discriminator = Discriminator("Discriminator")
+    print(generator)
 train(generator, discriminator)
