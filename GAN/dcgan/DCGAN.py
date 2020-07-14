@@ -36,8 +36,8 @@ class Generator(fluid.dygraph.Layer):
         super(Generator, self).__init__(name_scope)
         self.init_size = opt.img_size // 4
 
-        self.l1 = Linear(opt.latent_dim, 128 * self.init_size ** 2)
-
+        self.l1 = Linear(opt.latent_dim, 1024)
+        self.l2 = Linear(1024, 128 * self.init_size ** 2 )
         self.bn1 = BatchNorm(128,  
                             param_attr=ParamAttr(
                                 initializer=fluid.initializer.Normal(1., 0.02)),
@@ -46,8 +46,8 @@ class Generator(fluid.dygraph.Layer):
                             )
         self.conv1 = Conv2D(128, 128, 3, stride=1, padding=1,  
                             param_attr=ParamAttr(
-                                initializer=fluid.initializer.Normal(0.0, 0.02))
-                            )
+                                initializer=fluid.initializer.Normal(0.0, 0.02)),
+                            act="relu")
         self.bn2 = BatchNorm(128,  
                             param_attr=ParamAttr(
                                 initializer=fluid.initializer.Normal(1., 0.02)),
@@ -56,21 +56,25 @@ class Generator(fluid.dygraph.Layer):
                             )
         self.conv2 = Conv2D(128, 64, 3, stride=1, padding=1,  
                             param_attr=ParamAttr(
-                                initializer=fluid.initializer.Normal(0.0, 0.02))
+                                initializer=fluid.initializer.Normal(0.0, 0.02)),
+                            act="relu"
                             )
         self.bn3 = BatchNorm(64,  
                             param_attr=ParamAttr(
                                 initializer=fluid.initializer.Normal(1., 0.02)),
                             bias_attr=ParamAttr(
-                                initializer=fluid.initializer.Constant(0.0))
+                                initializer=fluid.initializer.Constant(0.0)),
+                            act="tanh"
                             )
         self.conv3 = Conv2D(64, opt.channels, 3, stride=1, padding=1,  
                             param_attr=ParamAttr(
-                                initializer=fluid.initializer.Normal(0.0, 0.02))
+                                initializer=fluid.initializer.Normal(0.0, 0.02)),
+                            act="tanh"
                             )
 
     def forward(self, z):
         out = self.l1(z)
+        out = self.l2(out)
         out = fluid.layers.reshape(out, shape=[out.shape[0], 128, self.init_size, self.init_size])
         out = self.bn1(out)
         out = fluid.layers.image_resize(out, scale=2)
@@ -82,7 +86,7 @@ class Generator(fluid.dygraph.Layer):
         out = self.bn3(out)
         out = fluid.layers.leaky_relu(out, alpha=0.2)
         out = self.conv3(out)
-        out = fluid.layers.tanh(out)
+        # out = fluid.layers.tanh(out)
         return out
 
 class DBlock(fluid.dygraph.Layer):
