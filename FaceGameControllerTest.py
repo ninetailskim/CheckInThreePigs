@@ -1,6 +1,6 @@
 from FaceGameController import FaceGameController
 
-controller = FaceGameController(debug=True,use_gpu=False)
+controller = FaceGameController(debug=True,use_gpu=True)
 
 while True:
-    controller.control()
+    controller.control(use_gpu=True)

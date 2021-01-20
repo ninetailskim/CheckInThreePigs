@@ -95,7 +95,7 @@ class FaceGameController(object):
         if face_landmark[4][1] < face_landmark[50][1] or face_landmark[12][1] < face_landmark[52][1]:
             action[3] = 8
 
-        if face_landmark[66][1] - face_landmark[62][1] > 1.2 * (face_landmark[62][1] - face_landmark[51][1]):
+        if face_landmark[66][1] - face_landmark[62][1] > 1.8 * (face_landmark[62][1] - face_landmark[51][1]):
             action[4] = 16
 
         if face_landmark[48][1] - face_landmark[62][1] < 0 or face_landmark[54][1] - face_landmark[62][1] < 0:
@@ -103,7 +103,7 @@ class FaceGameController(object):
         
         jer = self.judgeEye(face_landmark, img)
         action[6] = jer[0]
-        action[7] = jer[1]
+        action[7] = 0 # jer[1]
 
 
         return action
@@ -129,18 +129,20 @@ class FaceGameController(object):
             if self.debug:
                 cv2.imshow("Debug", frame_rgb)
                 cv2.waitKey(1)  
-            # return    
+            return [0,0,0,0,0,0,0,0]
         else:
-            tmp_img = frame_rgb.copy()
-            for _, point in enumerate(face_landmark):
-	            cv2.circle(tmp_img, (int(point[0]), int(point[1])), 2, (0, 0, 255), -1)
-            
+            if self.debug:
+                tmp_img = frame_rgb.copy()
+                for _, point in enumerate(face_landmark):
+                    cv2.circle(tmp_img, (int(point[0]), int(point[1])), 2, (0, 0, 255), -1)
+                cv2.imshow("Debug", tmp_img)
+                cv2.waitKey(1)
+
             action = self.judgeaction(face_landmark, frame_rgb)
             for ind, i in enumerate(action):
                 if i != 0:
                     print(self.actionset[ind])        
-            
-            cv2.imshow("Debug", tmp_img)
-            cv2.waitKey(1)
+            return action
+                
 
         # cv2.destroyAllWindows()
