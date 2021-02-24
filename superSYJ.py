@@ -70,8 +70,17 @@ class Compose(object):
         angle = math.atan(tanangle)  / math.pi * 180
         distance = math.sqrt((pointl[0] - pointr[0]) ** 2 + (pointl[1] - pointr[1]) ** 2)
         self.index = self.index % len(self.hair)
+        
         PILhair = Image.fromarray(cv2.cvtColor(self.hair[self.index], cv2.COLOR_BGR2RGB))
         ROTATEhair = PILhair.rotate(angle, expand=True)
+        rotatehair = cv2.cvtColor(np.asarray(ROTATEhair),cv2.COLOR_RGB2BGR)
+        rotatemask = self.KMS(rotatehair)
+        
+
+
+
+
+
         self.index += 1
 
 def get_point(module, frame):
