@@ -8,7 +8,9 @@ import random
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 currentSeg = None
+currentSeg3 = None
 currentTime = 0
+ballSeg = None
 genTime = []
 currentIndex = 0
 gm = []
@@ -59,12 +61,11 @@ class Ball:
     def draw(self, screen):
         t,l,b,r = getPIXEL(self.x, self.y, self.radius)
         if isinstance(self.color, int):
-            showimg[t:b,l:r,:] = self.color
+            screen[t:b,l:r,:] = self.color
         else:
-            showimg[t:b,l:r,0] = self.color[0]
-            showimg[t:b,l:r,1] = self.color[1]
-            showimg[t:b,l:r,2] = self.color[2]
-        # pg.draw.circle(screen, self.color, [self.x, self.y], self.radius)
+            screen[t:b,l:r,0] = self.color[0]
+            screen[t:b,l:r,1] = self.color[1]
+            screen[t:b,l:r,2] = self.color[2]
         
 
     def move(self, screen):
@@ -78,8 +79,11 @@ class Ball:
             self.speed_y = -self.speed_y
 
         time.sleep(0.001)
-
-        self.draw(screen)
+        if inseg(self.x, self.y, self.radius):
+            return True
+        else:
+            self.draw(screen)
+            return False
 
 balls = []
 
@@ -112,8 +116,7 @@ def create_ball(screen):
     speed_y = random.randint(-5, 5)
     
     b = Ball(x, y, speed_x, speed_y, r, color)
-    balls.append(b)
-    # b.draw(screen) 
+    balls.append(b) 
 
 
 def ball_manager():
@@ -123,9 +126,13 @@ def ball_manager():
                 create_ball()
         else:
             currentIndex += 1
-    
+
     for b in balls:
-        b.move(showimg)
+        if b.move(showimg):
+            return True
+    
+    return False
+        
 
 def main():
     cap = cv2.VideoCapture(0)
@@ -140,7 +147,7 @@ def main():
                 if np.sum(currentSeg) < minPIXEL:
                     if showimg is None:
                         showimg = np.ones_like(frame) * 255
-                    #打字
+                    showimg = cv2.putText(showimg, "Your face is too small!", (int(H/2), W), cv2.FONT_HERSHEY_SIMPLEX, 2, (0,0,0), 3)
                     cv2.imshow('Game', showimg)
                     cv2.waitKey(0)
 
@@ -150,13 +157,21 @@ def main():
                     if np.sum(currentSeg) < dangerousPIXEL:
                         frame[:,:,2] = 255
                     showimg = frame * currentSeg3 + showimg * (1 - currentSeg3)
-                    ball_manager()
+                    gameover = ball_manager()
                     showimg = showimg.astype(np.uint8)
-                    cv2.putText()
-                    cv2.imshow('Game', showimg)
-                    cv2.waitKey(1)
+                    if gameover:
+                        showimg = cv2.putText(showimg, "You Lose!", (int(H/2), W), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 3)
+                        cv2.imshow('Game', showimg)
+                        cv2.waitKey(0)
+                    else:
+                        cv2.imshow('Game', showimg)
+                        cv2.waitKey(1)
+            else:
+                print("Keep your face in camera")
+                break
         else:
             print("Check your camera!")
+            break
     cv2.destroyAllWindows()
 
 if __name__ == '__main__':
