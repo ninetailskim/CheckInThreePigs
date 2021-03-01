@@ -1,9 +1,11 @@
 import paddlehub as hub
 import cv2
 import numpy as np
-import pygame as pg
+# import pygame as pg
 import time
 import random
+import os
+import math
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
@@ -11,9 +13,9 @@ currentSeg = None
 currentSeg3 = None
 currentTime = 0
 ballSeg = None
-genTime = []
+genTime = [10, 20, 30]
 currentIndex = 0
-gm = []
+gm = [3, 2, 1]
 W = 0
 H = 0
 showimg = None
@@ -26,7 +28,7 @@ class segUtils:
         self.ace2p = hub.Module(name='ace2p')
 
     def getMask(self, frame):
-        res = ace2p.segmentation([frame], use_gpu=True)
+        res = self.ace2p.segmentation([frame], use_gpu=True)
         if isinstance(res, list):
             resint = res[0]['data']
             resint[resint != 2] = 0
@@ -97,13 +99,13 @@ def inseg(x, y, radius):
         return False
     else:
         t,l,b,r = getPIXEL(x, y, radius)
-        if np.sum(currentSeg[t:b,b:r]) > 0:
+        if np.sum(currentSeg[t:b,l:r]) > 0:
             return True
         else:
             return False
 
 
-def create_ball(screen):
+def create_ball():
 
     r = 3
     color = 0
@@ -120,12 +122,15 @@ def create_ball(screen):
 
 
 def ball_manager():
-    if currentIndex <= len(gm):
+    global showimg
+    global currentIndex
+    if currentIndex < len(gm):
         if currentTime < genTime[currentIndex]:
             for i in range(gm[currentIndex]):
                 create_ball()
         else:
             currentIndex += 1
+            if 
 
     for b in balls:
         if b.move(showimg):
@@ -135,22 +140,32 @@ def ball_manager():
         
 
 def main():
+    global showimg
+    global H
+    global W
+    global currentTime
+
+
     cap = cv2.VideoCapture(0)
     su = segUtils()
+    stime = time.time()
     while True:
+
         ret, frame = cap.read()
         if ret == True:
+
             H, W = frame.shape[:2]
-            
+            currentTime = math.floor(time.time() - stime)
             currentSeg = su.getMask(frame)
             if currentSeg is not None:
                 if np.sum(currentSeg) < minPIXEL:
                     if showimg is None:
                         showimg = np.ones_like(frame) * 255
                     showimg = cv2.putText(showimg, "Your face is too small!", (int(H/2), W), cv2.FONT_HERSHEY_SIMPLEX, 2, (0,0,0), 3)
+                    print("too")
                     cv2.imshow('Game', showimg)
                     cv2.waitKey(0)
-
+                    break
                 else:
                     showimg = np.ones_like(frame) * 255
                     currentSeg3 = np.repeat(currentSeg[:,:,np.newaxis], 3, axis=2)
@@ -161,9 +176,11 @@ def main():
                     showimg = showimg.astype(np.uint8)
                     if gameover:
                         showimg = cv2.putText(showimg, "You Lose!", (int(H/2), W), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 3)
+                        # print("what")
                         cv2.imshow('Game', showimg)
                         cv2.waitKey(0)
                     else:
+                        # print("what2")
                         cv2.imshow('Game', showimg)
                         cv2.waitKey(1)
             else:
