@@ -1,5 +1,6 @@
 import math
 import copy
+import cv2
 
 FatherAndSon = {
     'thorax':'centerpoint',
@@ -8,7 +9,7 @@ FatherAndSon = {
 
     'left_shoulder':'thorax',
     'left_elbow':'left_shoulder',
-    'left:wrist':'left_elbow',
+    'left_wrist':'left_elbow',
 
     'right_shoulder':'thorax',
     'right_elbow':'right_shoulder',
@@ -26,10 +27,12 @@ FatherAndSon = {
     'centerpoint':'centerpoint'
 }
 
-def complexres(res):
+def complexres(res, FatherAndSon):
     cres = copy.deepcopy(res)
     for key,pos in res.items():
         father = FatherAndSon[key]
+        if father == key:
+            continue
         if key[0] == 'm' or father[0] == 'm':
             midkey = 'm'+key+'_'+father
         else:
@@ -39,11 +42,12 @@ def complexres(res):
             fn = ''
             for t in father.split('_'):
                 fn += t[0]
-            midkey = 'm_'+kn+'_'+'fn'
-        midvalue = ((pos[0] + res[father][0]) / 2, (pos[1] + res[father][1])/2)
+            midkey = 'm_'+kn+'_'+fn
+        midvalue = [(pos[0] + res[father][0]) / 2, (pos[1] + res[father][1])/2]
         FatherAndSon[key] = midkey
         FatherAndSon[midkey] = father
         cres[midkey] = midvalue
+    return cres, FatherAndSon
 
 
 def distance(a, b):
@@ -66,13 +70,16 @@ def dist2weight(md):
 
 
 class skinItem():
-    def __init__(self, x, y):
+    def __init__(self, x, y, init, color, cirRad):
         super(skinItem, self).__init__()
         self.x = x
         self.y = y
+        self.init = init
+        self.color = color
+        self.cirRad = cirRad
         self.anchor = []
 
-    def getpos(self):
+    def getPos(self):
         return (self.x, self.y)
 
     def appendAnchor(self, anchor):
@@ -92,19 +99,22 @@ class anchorItem():
 
 
 class nodeItem():
-    def __init__(self, x, y, th, r, thabs, th0):
+    def __init__(self, x, y, name):
         super(nodeItem, self).__init__()
         self.x = x
         self.y = y
+        self.name = name
         
         self.parent = None
+        self.parentName = None
         self.children = []
 
-    def getpos(self):
-        return (self.x, self.y)
+    def getPos(self):
+        return [self.x, self.y]
 
-    def setParent(self, parent):
+    def setParent(self, parent, parentName):
         self.parent = parent
+        self.parentName = parentName
 
     def appendChildren(self, child):
         self.children.append(child)
@@ -114,6 +124,9 @@ class nodeItem():
         self.r = r
         self.thabs = thabs
         self.th0 = th0
+    
+    def getInfo(self):
+        return [self.th, self.r, self.thabs, self.th0]
 
 
 def getScale():
@@ -124,26 +137,32 @@ def addcenterPoint(res):
     pelvis = res['pelvis']
     x = (thorax[0] + pelvis[0]) / 2
     y = (thorax[1] + pelvis[1]) / 2
-    res['centerpoint'] = (x,y)
+    res['centerpoint'] = [x,y]
     return res
 
 
 
 nodes = {}
-def toNodes(tree):
+def toNodes(tree,FatherAndSon):
+    nodes = {}
     for key in FatherAndSon:
-        nodes[key] = nodeItem(tree[key][0], tree[key][1])
+        nodes[key] = nodeItem(tree[key][0], tree[key][1], key)
+    return nodes
 
-
-def connectNodes(tree):
+def connectNodes(nodes, FatherAndSon):
     for key,node in nodes.items():
         if key == 'centerpoint':
             continue
         if node.parent is not None:
             continue
-        node.setParent(nodes[FatherAndSon[key]])
+        node.setParent(nodes[FatherAndSon[key]], FatherAndSon[key])
         nodes[FatherAndSon[key]].appendChildren(node)
+    return nodes
 
+def travelTree(node,gen=0):
+    print("-" * gen*2,node.name, node.getPos(), node.getInfo())
+    for ch in node.children:
+        travelTree(ch, gen+1)
 
 def setInfo(node):
     if node.parent is None:
@@ -152,16 +171,17 @@ def setInfo(node):
         #和父节点之间的角度
         th = math.atan2(node.y-node.parent.y, node.x-node.parent.x)
         #和父节点之间的距离
-        r = distance(node.parent.getpos(), node.getpos())
+        r = distance(node.parent.getPos(), node.getPos())
         #用和父节点之间的角度 剪掉 父节点的thabs
         #所以这个node.th是计算相对于父节点的相对角度,这个
-        node.th = th - node.parent.thabs
-        #和父节点的距离
-        node.r = r
-        #和父节点的相对角度
-        node.thabs = th
-        #th0应该被认为是th的初始值,后来就没有再改变过
-        node.th0 = node.th 
+        # node.th = th - node.parent.thabs
+        # #和父节点的距离
+        # node.r = r
+        # #和父节点的相对角度
+        # node.thabs = th
+        # #th0应该被认为是th的初始值,后来就没有再改变过
+        # node.th0 = node.th 
+        node.setInfo(th - node.parent.thabs, r, th, th - node.parent.thabs)
     
     for n in node.children:
         setInfo(n)
@@ -169,54 +189,82 @@ def setInfo(node):
 #这里需要一个函数,拿到最新的骨骼图,
 #从根节点去更新所有骨头的相对角度,那TMD不就是setInfo吗?好像问题就这么解决了
 
+def updateNodesXY(nodes, res):
+    for key, value in res.items():
+        nodes[key].x = value[0]
+        nodes[key].y = value[1]
 
+def judge(li):
+    maxm = 0
+    maxi = 0
+    for index in range(len(li)):
+        if li[index] == float("inf"):
+            maxi = index 
+            break
+        if li[index] > maxm:
+            maxm = li[index]
+            maxi = index
+    # print(li)
+    # print(maxi, maxm)
+    return maxi
 
-def buildskin(lines, nodes):
+def buildskin(lines, colors, cirRads, nodes):
     if lines is None or nodes is None or len(lines) == 0 or len(nodes) == 0:
         return []
     skins = []
-    for line in lines:
+    print("doodle node length", len(nodes))
+
+    for lineindex in range(len(lines)):
+        init = True
+        line = lines[lineindex]
+        color = colors[lineindex]
+        cirRad = cirRads[lineindex]
         for p in line:
-            skins.append(skinItem(p[0], p[1]))
+            if init:
+                skins.append(skinItem(p[0], p[1], True, color, cirRad))
+                init = False
+            else:
+                skins.append(skinItem(p[0], p[1], False, color, cirRad))
     
     for skin in skins:
         md = [float("inf"), float("inf"), float("inf"), float("inf")]
         mn = [None, None, None, None]
         mdlen = 0
         for key,node in nodes.items():
-            d = distance(skin.getpos(), node.getpos())
-            for imd in md:
-                if d < imd:
-                    mdlen += 1
-                    md = [d] + md[:-1]
-                    mn = [node] + mn[:-1]
-                    break
+            d = distance(skin.getPos(), node.getPos())
+            maxi = judge(md)
+            if d < md[maxi]:
+                md[maxi] = d
+                mn[maxi] = node
+                mdlen += 1
         # skin.setAnchors 
         if mdlen < 4:
             md = md[:mdlen]
             mn = mn[:mdlen]
         ws = dist2weight(md)
-        
+        # print(mdlen)
+        # print(mn)
         for j in range(len(mn)):
             th = math.atan2(skin.y-mn[j].y, skin.x-mn[j].x)
-            r = distance(skin, mn[j])
+            r = distance(skin.getPos(), mn[j].getPos())
             w = ws[j]
             skin.appendAnchor(anchorItem(mn[j], th-mn[j].thabs, r, w))
 
     return skins
 
 
-def calculateSkin(skins):
+def calculateSkin(skins, scale):
     for skin in skins:
         xw = 0
         yw = 0
         for anchor in skin.getAnchor():
-            x = anchor.node.x + math.cos(anchor.th+anchor.node.thabs) * anchor.r
-            y = anchor.node.y + math.sin(anchor.th+anchor.node.thabs) * anchor.r
+            x = anchor.node.x + math.cos(anchor.th+anchor.node.thabs) * anchor.r * scale
+            y = anchor.node.y + math.sin(anchor.th+anchor.node.thabs) * anchor.r * scale
             xw += x * anchor.w
             yw += y * anchor.w
         skin.x = xw
-        skim.y = yw
+        skin.y = yw
+    return skins
 
 
 # 从这里看出来每次更新的时候其实要用到的,是anchor中的node的x,y,以及这个node的thabs
@@ -226,3 +274,34 @@ def calculateSkin(skins):
 # 错,还是需要×的,不然这个人会变得非常的细瘦, 而不是符合轮廓
 
 # 这个scale要如何计算呢?一个是一开始的模板的长度,一个是现在视频里的长度,然后 anchor.r / templength * videolength
+
+def debug(skins, canvas):
+    for skin in skins:
+        if skin.init:
+            pos = skin.getPos()
+            lp = (int(pos[0]) * 3, int(pos[1]) * 3)
+        else: 
+            pos = skin.getPos()
+            cv2.line(canvas, pt1=lp, pt2=(int(pos[0]) * 3, int(pos[1]) * 3), color=skin.color, thickness=skin.cirRad)
+            lp = (int(pos[0]) * 3, int(pos[1]) * 3)
+        for anchor in skin.getAnchor():
+            pos = anchor.node.getPos()
+            cv2.line(canvas, pt1=lp, pt2=(int(pos[0]) * 3, int(pos[1]) * 3), color=skin.color, thickness=1)
+            cv2.circle(canvas,(int(pos[0]) * 3, int(pos[1]) * 3), 10, (0,0,255), -1)
+    cv2.imshow("a", canvas)
+    cv2.waitKey(0)
+
+def debugNodesInfo(nodes, FatherAndSon, skins):
+    for key, value in FatherAndSon.items():
+        print(nodes[key].name,'--',nodes[key].getPos())
+    for skin in skins:
+        for anchor in skin.getAnchor():
+            if anchor.node.name in FatherAndSon.keys():
+                print(anchor.node.name,'--',anchor.node.getPos())
+
+def debugNodes(nodes, canvas):
+    for key, value in nodes.items():
+        pos = value.getPos()
+        cv2.circle(canvas, (int(pos[0]) * 3 , int(pos[1]) * 3), 8, (0,0,255), -1)
+    cv2.imshow("a", canvas)
+    cv2.waitKey(0)

@@ -12,15 +12,17 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 currentSeg = None
 currentSeg3 = None
 currentTime = 0
-ballSeg = None
-genTime = [10, 20, 30]
+lastTime = -1
+genTime = [5, 10, 20, 30]
 currentIndex = 0
-gm = [3, 2, 1]
+gm = [0, 1, 2, 1]
 W = 0
 H = 0
 showimg = None
-minPIXEL = 30 * 30
-dangerousPIXEL = 50 * 50
+minPIXEL = 2500
+dangerousPIXEL = 4500
+balls = []
+
 
 class segUtils:
     def __init__(self):
@@ -31,17 +33,37 @@ class segUtils:
         res = self.ace2p.segmentation([frame], use_gpu=True)
         if isinstance(res, list):
             resint = res[0]['data']
-            resint[resint != 2] = 0
-            resint[resint == 2] = 1
+            resint[resint != 13] = 0
+            resint[resint == 13] = 1
             return resint
         else:
             return None
 
+class segHuman:
+    def __init__(self):
+        super(segHuman, self).__init__()
+        self.module = hub.Module(name='humanseg_mobile')
+        self.prev_gray = None
+        self.prev_cfd = None
+
+    def getMask(self, frame, cap=None):
+        if cap is None:
+            res = self.module.segment(images=[frame], use_gpu=True)
+            if isinstance(res, list):
+                return np.around(res[0]['data'] / 255)
+        else:
+            res, gray, cfd = self.module.video_stream_segment(images=frame, frame_id=cap.get(1), use_gpu=True, prev_gray=self.prev_gray, prev_cfd=self.prev_cfd)
+            self.prev_gray = gray
+            self.prev_cfd = cfd
+            res[res < 100] = 0
+            res[res >= 100] = 1
+            return res
+
 def getPIXEL(x, y, radius):
     t = y - radius if y - radius > 0 else 0
     l = x - radius if x - radius > 0 else 0
-    b = y + radius if y + radius < H else H
-    r = x + radius if x + radius < W else W
+    b = y + radius if y + radius < H else H - 1
+    r = x + radius if x + radius < W else W - 1
     return t,l,b,r
 
 class Ball:
@@ -87,14 +109,13 @@ class Ball:
             self.draw(screen)
             return False
 
-balls = []
-
 def randomXY():
     x = random.randint(0, W)
     y = random.randint(0, H)
     return x, y
 
 def inseg(x, y, radius):
+    global currentSeg
     if currentSeg is None:
         return False
     else:
@@ -111,7 +132,7 @@ def create_ball():
     color = 0
 
     x, y = randomXY()
-    if inseg(x,y,r):
+    if inseg(x,y,r+30):
         x, y = randomXY()
 
     speed_x = random.randint(-5, 5)
@@ -124,13 +145,21 @@ def create_ball():
 def ball_manager():
     global showimg
     global currentIndex
-    if currentIndex < len(gm):
-        if currentTime < genTime[currentIndex]:
-            for i in range(gm[currentIndex]):
-                create_ball()
-        else:
-            currentIndex += 1
-            if 
+    global currentTime
+    global lastTime
+    global gm
+    global genTime
+    if currentTime != lastTime:
+        if currentIndex < len(gm):
+            if currentTime < genTime[currentIndex]:
+                for i in range(gm[currentIndex]):
+                    create_ball()
+            else:
+                currentIndex += 1
+                if currentIndex >= len(gm):
+                    currentIndex = len(gm) - 1
+        
+        lastTime = currentTime
 
     for b in balls:
         if b.move(showimg):
@@ -144,52 +173,86 @@ def main():
     global H
     global W
     global currentTime
+    global currentSeg
+    global startTime
+    global balls
+    global currentIndex
+    videostream = 0
 
-
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(videostream)
     su = segUtils()
-    stime = time.time()
-    while True:
+    sh = segHuman()
+    
+    restart = True
+    while restart:
+        restart = False
+        currentSeg = None
+        currentSeg3 = None
+        lastTime = -1
+        showimg = None
+        currentIndex = 0
+        balls = []
+        startTime = time.time()
+        while True:
 
-        ret, frame = cap.read()
-        if ret == True:
+            ret, frame = cap.read()
 
-            H, W = frame.shape[:2]
-            currentTime = math.floor(time.time() - stime)
-            currentSeg = su.getMask(frame)
-            if currentSeg is not None:
-                if np.sum(currentSeg) < minPIXEL:
+            if videostream == 0:
+                frame = cv2.flip(frame, 1)
+            cv2.imshow("origin", frame)
+            cv2.waitKey(1)
+            if ret == True:
+
+                H, W = frame.shape[:2]
+                currentTime = math.floor(time.time() - startTime)
+                currentSeg = su.getMask(frame)
+                if currentSeg is not None:
+                    sumSeg = np.sum(currentSeg)
+                    if sumSeg < minPIXEL:
+                        if showimg is None:
+                            showimg = np.ones_like(frame) * 255
+                        showimg = cv2.putText(showimg, "Pixel: " + str(sumSeg), (0, 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,0), 3)
+                        showimg = cv2.putText(showimg, "Your face is too small!", (0, int(H/2)), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,0), 3)
+                        cv2.imshow('Game', showimg)
+                        if cv2.waitKey(0) == ord('r'):
+                            restart = True
+                        break
+                    else:
+                        showimg = np.ones_like(frame) * 255
+                        currentSeg3 = np.repeat(currentSeg[:,:,np.newaxis], 3, axis=2)
+                        if np.sum(currentSeg) < dangerousPIXEL:
+                            frame[:,:,2] = 255
+                        showimg = frame * currentSeg3 + showimg * (1 - currentSeg3)
+                        gameover = ball_manager()
+                        showimg = showimg.astype(np.uint8)
+                        showimg = cv2.putText(showimg, "Pixel: " + str(sumSeg)+" Time:%2f: "% (time.time() - startTime), (0, 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,0), 3)
+                        if gameover:
+                            showimg = cv2.putText(showimg, "You Lose! Time:%2f:" % (time.time() - startTime), (0, int(H/2)), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 3)
+                            cv2.imshow('Game', showimg)
+                            if cv2.waitKey(0) == ord('r'):
+                                restart = True
+                            break
+                        else:
+                            cv2.imshow('Game', showimg)
+                            cv2.waitKey(1)
+                else:
                     if showimg is None:
                         showimg = np.ones_like(frame) * 255
-                    showimg = cv2.putText(showimg, "Your face is too small!", (int(H/2), W), cv2.FONT_HERSHEY_SIMPLEX, 2, (0,0,0), 3)
-                    print("too")
+                    showimg = cv2.putText(showimg, "Keep your face in camera", (0, int(H/2)), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,0), 3)
                     cv2.imshow('Game', showimg)
-                    cv2.waitKey(0)
+                    if cv2.waitKey(0) == ord('r'):
+                        restart = True
                     break
-                else:
-                    showimg = np.ones_like(frame) * 255
-                    currentSeg3 = np.repeat(currentSeg[:,:,np.newaxis], 3, axis=2)
-                    if np.sum(currentSeg) < dangerousPIXEL:
-                        frame[:,:,2] = 255
-                    showimg = frame * currentSeg3 + showimg * (1 - currentSeg3)
-                    gameover = ball_manager()
-                    showimg = showimg.astype(np.uint8)
-                    if gameover:
-                        showimg = cv2.putText(showimg, "You Lose!", (int(H/2), W), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 3)
-                        # print("what")
-                        cv2.imshow('Game', showimg)
-                        cv2.waitKey(0)
-                    else:
-                        # print("what2")
-                        cv2.imshow('Game', showimg)
-                        cv2.waitKey(1)
             else:
-                print("Keep your face in camera")
+                if showimg is None:
+                    showimg = np.ones_like(frame) * 255
+                showimg = cv2.putText(showimg, "Check your camera!", (0, int(H/2)), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,0), 3)
+                cv2.imshow('Game', showimg)
+                if cv2.waitKey(0) == ord('r'):
+                    restart = True
                 break
-        else:
-            print("Check your camera!")
-            break
     cv2.destroyAllWindows()
+    cap.release()
 
 if __name__ == '__main__':
     main()
