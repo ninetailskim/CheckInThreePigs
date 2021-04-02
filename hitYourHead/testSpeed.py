@@ -1,0 +1,1 @@
+import paddlehub as hub
