@@ -84,12 +84,25 @@ class detUtils():
                 self.last = reslist[maxi]
                 return reslist[maxi]
 
+class LandmarkUtils():
+    def __init__(self):
+        super().__init__()
+        self.module = hub.Module(name="face_landmark_localization")
+
+    def predict(self, frame):
+        result = self.module.keypoint_detection(images=[frame], use_gpu=True)
+        if result is not None:
+            return result[0]['data']
+        else:
+            return None
+
 
 class FaceCut():
     def __init__(self):
         super().__init__()
         self.SU = segUtils()
         self.DU = detUtils()
+        self.LU = LandmarkUtils()
 
     def getFace(self, frame):
         dres = self.DU.predict(frame)
@@ -106,6 +119,46 @@ class FaceCut():
             sres3 = np.repeat(sres[:,:,np.newaxis], 3, axis=2)
             facecut = sres3 * frame
             return facecut[top:bottom,left:right], sres3[top:bottom,left:right]
+
+    def getFaceByLandmark(self, frame):
+        result = self.LU.predict(frame)
+        if result is None:
+            return None, None
+        else:
+            print(result)
+            print(len(result))
+            result = result[0]
+            print(result)
+            print(len(result))
+            mask = np.zeros_like(frame).astype(np.uint8)
+            pts = []
+            order = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,27,26,25,20,19,18]
+            
+            h,w = frame.shape[:2]
+            top = h
+            bottom = 0
+            left = w
+            right = 0
+
+            for o in order:
+                tx = int(result[o-1][0])
+                ty = int(result[o-1][1])
+                if tx < left:
+                    left = tx
+                if tx > right:
+                    right = tx
+                if ty < top:
+                    top = ty
+                if ty > bottom:
+                    bottom = ty
+                pts.append([tx, ty])
+            mask = cv2.fillPoly(mask, [np.array(pts)], (255, 255, 255)).astype(np.uint8)
+
+            pframe = cv2.polylines(frame, [np.array(pts)], True, (255, 255, 255))
+
+            return mask[top:bottom, left:right], pframe[top:bottom, left:right]
+            
+
 
 FC = FaceCut()
 
@@ -138,10 +191,18 @@ grayface = cv2.cvtColor(gface, cv2.COLOR_BGR2GRAY)
 
 print(grayface.shape)
 
-for i in range(50,200,2):
+for i in range(50,200,10):
     img_binary = cv2.threshold(grayface, i, 255, cv2.THRESH_BINARY)[1]
     cv2.imshow("neggrayface", img_binary)
     cv2.waitKey(0)
+
+mask, pframe = FC.getFaceByLandmark(img)
+cv2.imshow("mask", mask)
+cv2.waitKey(0)
+
+cv2.imshow("pframe", pframe)
+cv2.waitKey(0)
+
 
 cv2.destroyAllWindows()
 
