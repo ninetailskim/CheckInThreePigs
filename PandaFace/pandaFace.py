@@ -125,11 +125,11 @@ class FaceCut():
         if result is None:
             return None, None
         else:
-            print(result)
-            print(len(result))
+            #print(result)
+            #print(len(result))
             result = result[0]
-            print(result)
-            print(len(result))
+            #print(result)
+            #print(len(result))
             mask = np.zeros_like(frame).astype(np.uint8)
             pts = []
             order = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,27,26,25,20,19,18]
@@ -157,12 +157,27 @@ class FaceCut():
             pframe = cv2.polylines(frame, [np.array(pts)], True, (255, 255, 255))
 
             return mask[top:bottom, left:right], pframe[top:bottom, left:right]
-            
+
+
+def constrast_img(img1, c, b):
+    rows, cols, channels = img1.shape
+
+    blank = np.zeros([rows, cols, channels], img1.dtype)
+    dst = cv2.addWeighted(img1, c, blank, 1-c, b)
+    grey = cv2.cvtColor(dst, cv2.COLOR_BGR2GRAY)
+    O = cv2.equalizeHist(grey)
+    img = np.concatenate([img1, dst], axis=1)
+    img2 = np.concatenate([grey, O], axis=1)
+    return img , img2   
 
 
 FC = FaceCut()
 
 img = cv2.imread("1.jpg")
+h, w = img.shape[:2]
+
+img = cv2.resize(img, (int(w/4), int(h/4)))
+
 
 face, facemask = FC.getFace(img)
 
@@ -189,12 +204,12 @@ grayface = cv2.cvtColor(gface, cv2.COLOR_BGR2GRAY)
 # cv2.imshow("grayface", grayface)
 # cv2.waitKey(0)
 
-print(grayface.shape)
+# print(grayface.shape)
 
-for i in range(50,200,10):
-    img_binary = cv2.threshold(grayface, i, 255, cv2.THRESH_BINARY)[1]
-    cv2.imshow("neggrayface", img_binary)
-    cv2.waitKey(0)
+# for i in range(50,200,10):
+#     img_binary = cv2.threshold(grayface, i, 255, cv2.THRESH_BINARY)[1]
+#     cv2.imshow("neggrayface", img_binary)
+#     cv2.waitKey(0)
 
 mask, pframe = FC.getFaceByLandmark(img)
 cv2.imshow("mask", mask)
@@ -203,13 +218,24 @@ cv2.waitKey(0)
 cv2.imshow("pframe", pframe)
 cv2.waitKey(0)
 
+back = np.ones_like(pframe) * 255
+
+res = (mask/255) * pframe + (1-(mask/255)) * back
+res = res.astype(np.uint8)
+cv2.imshow("res", res)
+cv2.waitKey(0)
+
+s = 0
+cons = []
+while s < 5:
+    cons.append(s)
+    s += 0.2
+
+for con in cons:
+    print("constract: ", con," brightness: ", 3)
+    image, image2 = constrast_img(res, con, 3)
+    cv2.imshow("test", image)
+    cv2.waitKey(0)
+    cv2.imshow("testg", image2)
 
 cv2.destroyAllWindows()
-
-
-
-
-
-
-
-
