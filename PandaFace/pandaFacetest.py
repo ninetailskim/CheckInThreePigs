@@ -96,6 +96,7 @@ class LandmarkUtils():
         else:
             return None
 
+
 class FaceCut():
     def __init__(self):
         super().__init__()
@@ -104,11 +105,20 @@ class FaceCut():
         self.LU = LandmarkUtils()
 
     def getFace(self, frame):
-        #dres = self.DU.predict(frame)
+        dres = self.DU.predict(frame)
         sres = self.SU.predict(frame)
+
+        if dres is None:
+            return None
+        else:
+            top = int(dres['top'])
+            left = int(dres['left'])
+            right = int(dres['right'])
+            bottom = int(dres['bottom'])
         
-        sres3 = np.repeat(sres[:,:,np.newaxis], 3, axis=2)
-        return sres3
+            sres3 = np.repeat(sres[:,:,np.newaxis], 3, axis=2)
+            facecut = sres3 * frame
+            return facecut[top:bottom,left:right], sres3[top:bottom,left:right]
 
     def getFaceByLandmark(self, frame):
         result = self.LU.predict(frame)
@@ -144,91 +154,88 @@ class FaceCut():
                 pts.append([tx, ty])
             mask = cv2.fillPoly(mask, [np.array(pts)], (255, 255, 255)).astype(np.uint8)
 
-            # pframe = cv2.polylines(frame, [np.array(pts)], True, (255, 255, 255))
+            pframe = cv2.polylines(frame, [np.array(pts)], True, (255, 255, 255))
 
-            return mask[top:bottom, left:right], frame[top:bottom, left:right], top, bottom, left, right
+            return mask[top:bottom, left:right], pframe[top:bottom, left:right]
 
-class PandaFace():
-    def __init__(self):
-        super().__init__()
-        self.FC = FaceCut()
 
-    def memecut(self, meme):
-        mask = self.FC.getFace(meme)
+def constrast_img(img1, c, b):
+    rows, cols, channels = img1.shape
 
-        cv2.imshow("mask", mask * 255)
-        cv2.waitKey(0)
+    blank = np.zeros([rows, cols, channels], img1.dtype)
+    dst = cv2.addWeighted(img1, c, blank, 1-c, b)
+    grey = cv2.cvtColor(dst, cv2.COLOR_BGR2GRAY)
+    O = cv2.equalizeHist(grey)
+    img = np.concatenate([img1, dst], axis=1)
+    img2 = np.concatenate([grey, O], axis=1)
+    return img , img2   
 
-        kernel = np.ones((3,3), dtype=np.uint8)
-        mask = cv2.erode(mask, kernel, iterations=2)
-        ones255 = np.ones_like(mask) * 255
-        meme = (ones255 * mask + meme * (1 - mask)).astype(np.uint8)
-        return meme
 
-    def constrast_img(self, img1, con=2.2, bri=3):
-        rows, cols, channels = img1.shape
-        blank = np.zeros([rows, cols, channels], img1.dtype)
-        dst = cv2.addWeighted(img1, con, blank, 1-con, bri)
-        grey = cv2.cvtColor(dst, cv2.COLOR_BGR2GRAY)
-        #O = cv2.equalizeHist(grey)
-        #img = np.concatenate([img1, dst], axis=1)
-        #img2 = np.concatenate([grey, O], axis=1)
-        #return img , img2 
-        #grey = cv2.equalizeHist(grey)
-        grey =  cv2.cvtColor(grey, cv2.COLOR_GRAY2BGR)
-        return grey 
+FC = FaceCut()
 
-    def facecut(self, face):
-        mask, face, _, _, _, _ = self.FC.getFaceByLandmark(face)
-        back = np.ones_like(face) * 255
-        res = (mask / 255) * face + (1-(mask / 255)) * back
-        res = res.astype(np.uint8)
-        image = self.constrast_img(res)
-        return image, mask
+img = cv2.imread("1.jpg")
+h, w = img.shape[:2]
 
-    def compose(self, meme, face):
-        _, _, top, bottom, left, right = self.FC.getFaceByLandmark(meme)
-        meme = self.memecut(meme)
-        face,mask = self.facecut(face)
-        h,w = face.shape[:2]
-        mh = bottom - top - 10
-        mw = right - left - 10
-        # print(mh, mw)
-        cx = int((right + left) / 2)
-        cy = int((top + bottom) / 2)
-        neww = mw
-        newh = mh
-        if h/w < mh/mw:
-            #w
-            neww = mw
-            newh = int(neww / w * h)
-            face = cv2.resize(face, (neww, newh))
-            mask = cv2.resize(mask, (neww, newh))
-        else:
-            #h
-            newh = mh
-            neww = int(newh / h * w)
-            face = cv2.resize(face, (neww, newh))
-            mask = cv2.resize(mask, (neww, newh))
-        # print(newh, neww)
-        cx -= int(neww / 2)
-        cy -= int(newh / 2)
-        cv2.imshow("meme", meme.astype(np.uint8))
-        cv2.waitKey(0)
-        meme[cy:cy+newh, cx:cx+neww] = face * (mask / 255) + meme[cy:cy+newh, cx:cx+neww] * (1 - mask / 255)
-        meme.astype(np.uint8)
-        return meme
+img = cv2.resize(img, (int(w/4), int(h/4)))
 
-def main():
-    PF = PandaFace()
-    meme = cv2.imread("origin\\p4.jpeg")
-    face = cv2.imread("1.jpg")
 
-    meme = PF.compose(meme, face)
-    cv2.imshow("res", meme)
+face, facemask = FC.getFace(img)
+
+back = np.ones_like(face) * 255
+oface = face * facemask + back * (1 - facemask)
+
+oface = oface.astype(np.uint8)
+
+# cv2.imshow("face", oface)
+# cv2.waitKey(0)
+
+facemask = cv2.GaussianBlur(facemask.astype(np.float32), (25,25), 0)
+facemask = np.floor(facemask)
+
+gface = face * facemask + back * (1 - facemask)
+
+gface = gface.astype(np.uint8)
+
+# cv2.imshow("Gaussianface", gface)
+# cv2.waitKey(0)
+
+grayface = cv2.cvtColor(gface, cv2.COLOR_BGR2GRAY)
+
+# cv2.imshow("grayface", grayface)
+# cv2.waitKey(0)
+
+# print(grayface.shape)
+
+# for i in range(50,200,10):
+#     img_binary = cv2.threshold(grayface, i, 255, cv2.THRESH_BINARY)[1]
+#     cv2.imshow("neggrayface", img_binary)
+#     cv2.waitKey(0)
+
+mask, pframe = FC.getFaceByLandmark(img)
+cv2.imshow("mask", mask)
+cv2.waitKey(0)
+
+cv2.imshow("pframe", pframe)
+cv2.waitKey(0)
+
+back = np.ones_like(pframe) * 255
+
+res = (mask/255) * pframe + (1-(mask/255)) * back
+res = res.astype(np.uint8)
+cv2.imshow("res", res)
+cv2.waitKey(0)
+
+s = 0
+cons = []
+while s < 5:
+    cons.append(s)
+    s += 0.2
+
+for con in cons:
+    print("constract: ", con," brightness: ", 3)
+    image, image2 = constrast_img(res, con, 3)
+    cv2.imshow("test", image)
     cv2.waitKey(0)
+    cv2.imshow("testg", image2)
 
-    cv2.destroyAllWindows()
-
-if __name__ == '__main__':
-    main()
+cv2.destroyAllWindows()
