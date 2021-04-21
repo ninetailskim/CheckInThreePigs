@@ -9,6 +9,19 @@ import copy
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
+class segUtils():
+    def __init__(self):
+        super().__init__()
+        self.module = hub.Module(name="ace2p")
+
+    def predict(self, frame):
+        result = self.module.segmentation(images=[frame], use_gpu=True)
+        result = result[0]['data']
+        result[result != 13] = 0
+        result[result == 13] = 1
+        return result
+
+
 class LandmarkUtils():
     def __init__(self):
         super().__init__()
@@ -25,6 +38,13 @@ class FaceCut():
     def __init__(self):
         super().__init__()
         self.LU = LandmarkUtils()
+        self.SU = segUtils()
+
+    def getFace(self, frame):
+        sres = self.SU.predict(frame)
+        
+        sres3 = np.repeat(sres[:,:,np.newaxis], 3, axis=2)
+        return sres3
 
     def getFaceByLandmark(self, frame):
         result = self.LU.predict(frame)
@@ -61,6 +81,10 @@ class FaceCut():
             mask = cv2.fillPoly(mask, [np.array(pts)], (255, 255, 255)).astype(np.uint8)
 
             # pframe = cv2.polylines(frame, [np.array(pts)], True, (255, 255, 255))
+
+            #mask2 = self.getFace(frame)
+
+            #mask = mask * mask2 
 
             return mask[top:bottom, left:right], frame[top:bottom, left:right], top, bottom, left, right
 
@@ -148,10 +172,17 @@ def constrast_img(img1, con=2.2, bri=3):
     grey =  cv2.cvtColor(grey, cv2.COLOR_GRAY2BGR)
     return grey 
 
+def gamma_img(img1, gamma):
+    grey = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+    lookUpTable = np.empty((1,256), np.uint8)
+    for i in range(256):
+        lookUpTable[0,i] = np.clip(pow(i / 255.0, gamma) * 255.0, 0, 255)
+    return cv2.LUT(grey, gamma)
+
 def main():
     PF = PandaFace()
     FC = FaceCut()
-    filelist = glob.glob("")
+    filelist = glob.glob("*.jpg")
 
     s = 0
     cons = []
@@ -164,7 +195,7 @@ def main():
     for file in filelist:
         basename = os.path.basename(file)
         img = cv2.imread(file)
-        mask, frame, top, bottom, left, right = FC.getFaceByLandmark(img)
+        mask, frame, _, _, _, _ = FC.getFaceByLandmark(img)
 
         kernel = np.ones((3,3), dtype=np.uint8)
         mask = cv2.erode(mask, kernel, iterations=10)
@@ -176,10 +207,23 @@ def main():
         for con in cons:
             image = constrast_img(res, con, 3)
             tres = np.concatenate([tres, image], axis=1)
-        for bri in [0,1,2]:
+        cv2.imwrite("res/cons_"+basename, tres)
+        tres = copy.deepcopy(res)
+        for bri in [0,20,40]:
             image = constrast_img(res, 2.2, bri)
             tres = np.concatenate([tres, image], axis=1)
-        cv2.imwrite("res/"+basename, tres)
+        for bri in [0,50,100]:
+            image = constrast_img(res, 2.2, bri)
+            tres = np.concatenate([tres, image], axis=1)
+        cv2.imwrite("res/brig_"+basename, tres)
+        tres = copy.deepcopy(res)
+        for gamma in [0.1, 0.2, 0.4, 0.67, 1.5, 2.5, 5, 10, 25]:
+            image = gamma_img(res, gamma)
+            tres = np.concatenate([tres, image], axis=1)
+        cv2.imwrite("res/gamm_"+basename, tres)
+
+        
+        
         
 
 if __name__ == '__main__':
