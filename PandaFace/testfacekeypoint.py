@@ -5,6 +5,7 @@ import math
 import os
 import glob
 import copy
+import sys
 
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -82,9 +83,9 @@ class FaceCut():
 
             # pframe = cv2.polylines(frame, [np.array(pts)], True, (255, 255, 255))
 
-            #mask2 = self.getFace(frame)
+            mask2 = self.getFace(frame)
 
-            #mask = mask * mask2 
+            mask = mask * mask2 
 
             return mask[top:bottom, left:right], frame[top:bottom, left:right], top, bottom, left, right
 
@@ -169,20 +170,35 @@ def constrast_img(img1, con=2.2, bri=3):
     #img2 = np.concatenate([grey, O], axis=1)
     #return img , img2 
     #grey = cv2.equalizeHist(grey)
+    grey = grey.astype(np.int32)
+    grey[grey < 80] -= 50
+    grey[grey >= 80] += 50
+    grey = np.clip(grey, 0, 255)
+    grey = grey.astype(np.uint8)
     grey =  cv2.cvtColor(grey, cv2.COLOR_GRAY2BGR)
     return grey 
 
 def gamma_img(img1, gamma):
     grey = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
-    lookUpTable = np.empty((1,256), np.uint8)
-    for i in range(256):
-        lookUpTable[0,i] = np.clip(pow(i / 255.0, gamma) * 255.0, 0, 255)
-    return cv2.LUT(grey, gamma)
+    gamma_table = [np.power(x / 255.0, gamma) * 255.0 for x in range(256)]
+    gamma_table = np.round(np.array(gamma_table)).astype(np.uint8)
+    out = cv2.LUT(grey, gamma_table)
+    # print(img1.shape)
+    # print(grey.shape)
+    # print(out.shape)
+    out = out.astype(np.int32)
+    out[out < 80] -= 50
+    out[out >= 80] += 50
+    out = np.clip(out, 0, 255)
+    out = out.astype(np.uint8)
+    grey =  cv2.cvtColor(out, cv2.COLOR_GRAY2BGR)
+    return grey
 
 def main():
     PF = PandaFace()
     FC = FaceCut()
     filelist = glob.glob("*.jpg")
+    
 
     s = 0
     cons = []
@@ -190,11 +206,20 @@ def main():
         cons.append(s)
         s += 0.2
 
-    os.makedirs("res", exist_ok=True)
+    os.makedirs(sys.argv[1], exist_ok=True)
 
     for file in filelist:
+        print(file)
         basename = os.path.basename(file)
         img = cv2.imread(file)
+
+        h,w, _ = img.shape
+        while max(h, w) > 2000:
+            h /= 2
+            w /= 2
+        
+        img = cv2.resize(img, (int(w), int(h)))
+
         mask, frame, _, _, _, _ = FC.getFaceByLandmark(img)
 
         kernel = np.ones((3,3), dtype=np.uint8)
@@ -207,7 +232,7 @@ def main():
         for con in cons:
             image = constrast_img(res, con, 3)
             tres = np.concatenate([tres, image], axis=1)
-        cv2.imwrite("res/cons_"+basename, tres)
+        cv2.imwrite(sys.argv[1]+"/cons_"+basename, tres)
         tres = copy.deepcopy(res)
         for bri in [0,20,40]:
             image = constrast_img(res, 2.2, bri)
@@ -215,16 +240,13 @@ def main():
         for bri in [0,50,100]:
             image = constrast_img(res, 2.2, bri)
             tres = np.concatenate([tres, image], axis=1)
-        cv2.imwrite("res/brig_"+basename, tres)
+        cv2.imwrite(sys.argv[1]+"/brig_"+basename, tres)
         tres = copy.deepcopy(res)
         for gamma in [0.1, 0.2, 0.4, 0.67, 1.5, 2.5, 5, 10, 25]:
             image = gamma_img(res, gamma)
             tres = np.concatenate([tres, image], axis=1)
-        cv2.imwrite("res/gamm_"+basename, tres)
-
-        
-        
-        
+        cv2.imwrite(sys.argv[1]+"/gamm_"+basename, tres)
+      
 
 if __name__ == '__main__':
     main()
