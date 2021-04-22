@@ -171,8 +171,8 @@ def constrast_img(img1, con=2.2, bri=3):
     #return img , img2 
     #grey = cv2.equalizeHist(grey)
     grey = grey.astype(np.int32)
-    grey[grey < 80] -= 50
-    grey[grey >= 80] += 50
+    grey[grey < 100] -= 50
+    grey[grey >= 100] += 50
     grey = np.clip(grey, 0, 255)
     grey = grey.astype(np.uint8)
     grey =  cv2.cvtColor(grey, cv2.COLOR_GRAY2BGR)
@@ -187,8 +187,8 @@ def gamma_img(img1, gamma):
     # print(grey.shape)
     # print(out.shape)
     out = out.astype(np.int32)
-    out[out < 80] -= 50
-    out[out >= 80] += 50
+    out[out < 100] -= 50
+    out[out >= 100] += 50
     out = np.clip(out, 0, 255)
     out = out.astype(np.uint8)
     grey =  cv2.cvtColor(out, cv2.COLOR_GRAY2BGR)
@@ -207,6 +207,10 @@ def main():
         s += 0.2
 
     os.makedirs(sys.argv[1], exist_ok=True)
+
+    conimg = []
+    briimg = []
+    gamimg = []
 
     for file in filelist:
         print(file)
@@ -228,24 +232,43 @@ def main():
         back = np.ones_like(frame) * 255
         res = (mask / 255) * frame + (1-(mask / 255)) * back
         res = res.astype(np.uint8)
-        tres = copy.deepcopy(res)
+
+        h,w = res.shape[:2]
+        neww = 268
+        newh = int(neww / h * w)
+        res = cv2.resize(res, (neww, newh))
+        
+        conres = copy.deepcopy(res)
         for con in cons:
             image = constrast_img(res, con, 3)
-            tres = np.concatenate([tres, image], axis=1)
-        cv2.imwrite(sys.argv[1]+"/cons_"+basename, tres)
-        tres = copy.deepcopy(res)
+            conres = np.concatenate([conres, image], axis=1)
+        cv2.imwrite(sys.argv[1]+"/cons_"+basename, conres)
+        brires = copy.deepcopy(res)
         for bri in [0,20,40]:
-            image = constrast_img(res, 2.2, bri)
-            tres = np.concatenate([tres, image], axis=1)
+            image = constrast_img(brires, 2.2, bri)
+            brires = np.concatenate([brires, image], axis=1)
         for bri in [0,50,100]:
             image = constrast_img(res, 2.2, bri)
-            tres = np.concatenate([tres, image], axis=1)
-        cv2.imwrite(sys.argv[1]+"/brig_"+basename, tres)
-        tres = copy.deepcopy(res)
+            brires = np.concatenate([brires, image], axis=1)
+        cv2.imwrite(sys.argv[1]+"/brig_"+basename, brires)
+        gamres = copy.deepcopy(res)
         for gamma in [0.1, 0.2, 0.4, 0.67, 1.5, 2.5, 5, 10, 25]:
-            image = gamma_img(res, gamma)
-            tres = np.concatenate([tres, image], axis=1)
-        cv2.imwrite(sys.argv[1]+"/gamm_"+basename, tres)
+            image = gamma_img(gamres, gamma)
+            gamres = np.concatenate([gamres, image], axis=1)
+        cv2.imwrite(sys.argv[1]+"/gamm_"+basename, gamres)
+        conimg.append(conres)
+        briimg.append(brires)
+        gamimg.append(gamres)
+    for res in conimg:
+        print(res.shape)
+    conimage = np.concatenate(conimg, axis=0)
+    briimage = np.concatenate(briimg, axis=0)
+    gamimage = np.concatenate(gamimg, axis=0)
+
+    cv2.imwrite(sys.argv[1]+"/con.png", conimage)
+    cv2.imwrite(sys.argv[1]+"/bri.png", briimage)
+    cv2.imwrite(sys.argv[1]+"/gam.png", gamimage)
+    
       
 
 if __name__ == '__main__':
