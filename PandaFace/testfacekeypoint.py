@@ -10,6 +10,8 @@ import sys
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
+threshold = int(sys.argv[1])
+
 class segUtils():
     def __init__(self):
         super().__init__()
@@ -81,11 +83,32 @@ class FaceCut():
                 pts.append([tx, ty])
             mask = cv2.fillPoly(mask, [np.array(pts)], (255, 255, 255)).astype(np.uint8)
 
-            # pframe = cv2.polylines(frame, [np.array(pts)], True, (255, 255, 255))
+            frame = cv2.polylines(frame, [np.array(pts)], True, (255, 255, 255))
 
             mask2 = self.getFace(frame)
 
-            mask = mask * mask2 
+            mask = mask[:,:,0] * mask2[:,:,0] 
+
+            print(mask.shape)
+
+            xline = np.sum(mask, axis=0)
+            yline = np.sum(mask, axis=1)
+
+            xaxis = np.where(xline > 0)
+            yaxis = np.where(yline > 0)
+
+            top = np.min(yaxis)
+            bottom = np.max(yaxis)
+            left = np.min(xaxis)
+            right = np.max(xaxis)
+
+            print(bottom, top, left, right)
+
+            #cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+
+            # cv2.imshow("dadada", frame)
+            # cv2.waitKey(0)
+            # cv2.destroyAllWindows()
 
             return mask[top:bottom, left:right], frame[top:bottom, left:right], top, bottom, left, right
 
@@ -160,7 +183,7 @@ class PandaFace():
         meme.astype(np.uint8)
         return meme
 
-def constrast_img(img1, con=2.2, bri=3):
+def constrast_img(img1, con=2.2, bri=3, threshold=0):
     rows, cols, channels = img1.shape
     blank = np.zeros([rows, cols, channels], img1.dtype)
     dst = cv2.addWeighted(img1, con, blank, 1-con, bri)
@@ -170,39 +193,42 @@ def constrast_img(img1, con=2.2, bri=3):
     #img2 = np.concatenate([grey, O], axis=1)
     #return img , img2 
     #grey = cv2.equalizeHist(grey)
-    grey = grey.astype(np.int32)
-    grey[grey < 100] -= 50
-    grey[grey >= 100] += 50
-    grey = np.clip(grey, 0, 255)
-    grey = grey.astype(np.uint8)
+    if threshold > 0:
+        grey = grey.astype(np.int32)
+        grey[grey < threshold] -= 50
+        grey[grey >= threshold] += 50
+        grey = np.clip(grey, 0, 255)
+        grey = grey.astype(np.uint8)
     grey =  cv2.cvtColor(grey, cv2.COLOR_GRAY2BGR)
     return grey 
 
-def gamma_img(img1, gamma):
+def gamma_img(img1, gamma, threshold=0):
     grey = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
     gamma_table = [np.power(x / 255.0, gamma) * 255.0 for x in range(256)]
     gamma_table = np.round(np.array(gamma_table)).astype(np.uint8)
+    print()
     out = cv2.LUT(grey, gamma_table)
     # print(img1.shape)
     # print(grey.shape)
     # print(out.shape)
-    out = out.astype(np.int32)
-    out[out < 100] -= 50
-    out[out >= 100] += 50
-    out = np.clip(out, 0, 255)
-    out = out.astype(np.uint8)
+    if threshold > 0:
+        out = out.astype(np.int32)
+        out[out < threshold] -= 50
+        out[out >= threshold] += 50
+        out = np.clip(out, 0, 255)
+        out = out.astype(np.uint8)
     grey =  cv2.cvtColor(out, cv2.COLOR_GRAY2BGR)
     return grey
 
 def main():
     PF = PandaFace()
     FC = FaceCut()
-    filelist = glob.glob("*.jpg")
+    filelist = glob.glob("origin/p5.jpg")
     
 
     s = 0
     cons = []
-    while s < 5:
+    while s < 3.6:
         cons.append(s)
         s += 0.2
 
@@ -218,7 +244,7 @@ def main():
         img = cv2.imread(file)
 
         h,w, _ = img.shape
-        while max(h, w) > 2000:
+        while max(h, w) > 1400:
             h /= 2
             w /= 2
         
@@ -235,32 +261,53 @@ def main():
 
         h,w = res.shape[:2]
         neww = 268
-        newh = int(neww / h * w)
+        newh = int(neww / w * h)
         res = cv2.resize(res, (neww, newh))
         
         conres = copy.deepcopy(res)
         for con in cons:
             image = constrast_img(res, con, 3)
             conres = np.concatenate([conres, image], axis=1)
-        cv2.imwrite(sys.argv[1]+"/cons_"+basename, conres)
+        #cv2.imwrite(sys.argv[1]+"/cons_"+basename, conres)
         brires = copy.deepcopy(res)
         for bri in [0,20,40]:
-            image = constrast_img(brires, 2.2, bri)
+            image = constrast_img(res, 2.2, bri)
             brires = np.concatenate([brires, image], axis=1)
         for bri in [0,50,100]:
             image = constrast_img(res, 2.2, bri)
             brires = np.concatenate([brires, image], axis=1)
-        cv2.imwrite(sys.argv[1]+"/brig_"+basename, brires)
+        #cv2.imwrite(sys.argv[1]+"/brig_"+basename, brires)
         gamres = copy.deepcopy(res)
-        for gamma in [0.1, 0.2, 0.4, 0.67, 1.5, 2.5, 5, 10, 25]:
-            image = gamma_img(gamres, gamma)
+        for gamma in [0.1, 0.2, 0.4, 0.67]:
+            image = gamma_img(res, gamma)
             gamres = np.concatenate([gamres, image], axis=1)
-        cv2.imwrite(sys.argv[1]+"/gamm_"+basename, gamres)
+        #cv2.imwrite(sys.argv[1]+"/gamm_"+basename, gamres)
         conimg.append(conres)
         briimg.append(brires)
         gamimg.append(gamres)
-    for res in conimg:
-        print(res.shape)
+
+        conres = copy.deepcopy(res)
+        for con in cons:
+            image = constrast_img(res, con, 3, int(sys.argv[1]))
+            conres = np.concatenate([conres, image], axis=1)
+        #cv2.imwrite(sys.argv[1]+"/cons_"+basename, conres)
+        brires = copy.deepcopy(res)
+        for bri in [0,20,40]:
+            image = constrast_img(res, 2.2, bri, int(sys.argv[1]))
+            brires = np.concatenate([brires, image], axis=1)
+        for bri in [0,50,100]:
+            image = constrast_img(res, 2.2, bri, int(sys.argv[1]))
+            brires = np.concatenate([brires, image], axis=1)
+        #cv2.imwrite(sys.argv[1]+"/brig_"+basename, brires)
+        gamres = copy.deepcopy(res)
+        for gamma in [0.1, 0.2, 0.4, 0.67]:
+            image = gamma_img(res, gamma, int(sys.argv[1]))
+            gamres = np.concatenate([gamres, image], axis=1)
+        #cv2.imwrite(sys.argv[1]+"/gamm_"+basename, gamres)
+        conimg.append(conres)
+        briimg.append(brires)
+        gamimg.append(gamres)
+    
     conimage = np.concatenate(conimg, axis=0)
     briimage = np.concatenate(briimg, axis=0)
     gamimage = np.concatenate(gamimg, axis=0)

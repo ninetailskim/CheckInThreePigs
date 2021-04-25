@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import math
 import os
+import copy
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
@@ -133,20 +134,67 @@ class FaceCut():
             for o in order:
                 tx = int(result[o-1][0])
                 ty = int(result[o-1][1])
-                if tx < left:
-                    left = tx
-                if tx > right:
-                    right = tx
-                if ty < top:
-                    top = ty
-                if ty > bottom:
-                    bottom = ty
+                # if tx < left:
+                #     left = tx
+                # if tx > right:
+                #     right = tx
+                # if ty < top:
+                #     top = ty
+                # if ty > bottom:
+                #     bottom = ty
                 pts.append([tx, ty])
             mask = cv2.fillPoly(mask, [np.array(pts)], (255, 255, 255)).astype(np.uint8)
 
-            # pframe = cv2.polylines(frame, [np.array(pts)], True, (255, 255, 255))
+            #pframe = cv2.polylines(frame, [np.array(pts)], True, (255, 255, 255))
+
+            mask2 = self.getFace(frame)
+
+            mask = mask * mask2
+            tmask = mask[:,:,0] * mask2[:,:,0]
+            xaxis = np.where(np.sum(tmask, axis=0))
+            yaxis = np.where(np.sum(tmask, axis=1))
+
+            top = np.min(yaxis)
+            bottom = np.max(yaxis)
+            left = np.min(xaxis)
+            right = np.max(xaxis)
 
             return mask[top:bottom, left:right], frame[top:bottom, left:right], top, bottom, left, right
+
+def histMatch(hista, tpl):
+    j = 1
+    res = np.zeros_like(hista)
+    for i in range(256):
+        #print(i,hista[i][0],"---",j,tpl[j][0])
+        while j < 255 and hista[i][0] > tpl[j][0]:
+            j += 1 
+        if abs(hista[i][0] - tpl[j][0]) < abs(hista[i][0] - tpl[j - 1][0]):
+            res[i][0] = j
+        else:
+            res[i][0] = j - 1
+    res = np.reshape(res, [256]).astype(np.uint8)
+    return res
+
+class myHistogram():
+    def __init__(self, img):
+        super().__init__()
+        if len(img.shape) == 3:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        self.h, self.w = img.shape
+        self.hist = self.calhistogram(img) / (self.h * self.w)
+        self.p = self.hist2p()
+
+    def calhistogram(self, image):
+        return cv2.calcHist([image],[0],None, [256],[0,256])
+
+    def hist2p(self):
+        p = np.zeros_like(self.hist)
+        sum = 0
+        for i in range(256):
+            t = self.hist[i][0]
+            sum += t
+            p[i][0] = sum
+        return p
 
 class PandaFace():
     def __init__(self):
@@ -165,7 +213,7 @@ class PandaFace():
         meme = (ones255 * mask + meme * (1 - mask)).astype(np.uint8)
         return meme
 
-    def constrast_img(self, img1, con=2.2, bri=3):
+    def constrast_img(self, img1, con=2.2, bri=3, name=None):
         rows, cols, channels = img1.shape
         blank = np.zeros([rows, cols, channels], img1.dtype)
         dst = cv2.addWeighted(img1, con, blank, 1-con, bri)
@@ -176,20 +224,43 @@ class PandaFace():
         #return img , img2 
         #grey = cv2.equalizeHist(grey)
         grey =  cv2.cvtColor(grey, cv2.COLOR_GRAY2BGR)
+        if name is not None:
+            cv2.imwrite(name, grey)
         return grey 
 
-    def facecut(self, face):
-        mask, face, _, _, _, _ = self.FC.getFaceByLandmark(face)
+    def mf(self, mask, face, name=None):
         back = np.ones_like(face) * 255
         res = (mask / 255) * face + (1-(mask / 255)) * back
         res = res.astype(np.uint8)
-        image = self.constrast_img(res)
+        if name is not None:
+            cv2.imwrite(name, res)
+        return res
+
+    def facecut(self, face, memem, memef):
+        mask, face, _, _, _, _ = self.FC.getFaceByLandmark(face)
+        res = self.mf(mask, face, "face.png")
+        mres = self.mf(memem, memef, "tmp.png")
+        image = self.constrast_img(res, name="conface.png")
+        cv2.imshow("imagelut", image)
+        cv2.waitKey(0)
+        memehist = myHistogram(mres)
+        facehist = myHistogram(image)
+        lut = histMatch(facehist.p, memehist.p)
+        image = cv2.LUT(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), lut)
+        cv2.imshow("tmplut", mres)
+        cv2.waitKey(0)
+        cv2.imshow("facelut", image)
+        cv2.waitKey(0)
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
         return image, mask
 
     def compose(self, meme, face):
-        _, _, top, bottom, left, right = self.FC.getFaceByLandmark(meme)
+        memem, memef, top, bottom, left, right = self.FC.getFaceByLandmark(meme)
+        neme = cv2.rectangle(copy.deepcopy(meme), (left, top), (right, bottom), (0, 255, 0), 2)
+        cv2.imshow("newme", neme)
+        cv2.waitKey(0)
         meme = self.memecut(meme)
-        face,mask = self.facecut(face)
+        face,mask = self.facecut(face, memem, memef)
         h,w = face.shape[:2]
         mh = bottom - top - 10
         mw = right - left - 10
@@ -221,7 +292,7 @@ class PandaFace():
 
 def main():
     PF = PandaFace()
-    meme = cv2.imread("origin\\p4.jpeg")
+    meme = cv2.imread("origin/p9.png")
     face = cv2.imread("1.jpg")
 
     meme = PF.compose(meme, face)
