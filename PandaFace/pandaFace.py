@@ -4,8 +4,13 @@ import numpy as np
 import math
 import os
 import copy
+import imageio
+from PIL import Image, ImageDraw, ImageFont
+import glob
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
+debug = False
 
 class segUtils():
     def __init__(self):
@@ -116,11 +121,7 @@ class FaceCut():
         if result is None:
             return None, None
         else:
-            #print(result)
-            #print(len(result))
             result = result[0]
-            #print(result)
-            #print(len(result))
             mask = np.zeros_like(frame).astype(np.uint8)
             pts = []
             order = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,27,26,25,20,19,18]
@@ -134,18 +135,8 @@ class FaceCut():
             for o in order:
                 tx = int(result[o-1][0])
                 ty = int(result[o-1][1])
-                # if tx < left:
-                #     left = tx
-                # if tx > right:
-                #     right = tx
-                # if ty < top:
-                #     top = ty
-                # if ty > bottom:
-                #     bottom = ty
                 pts.append([tx, ty])
             mask = cv2.fillPoly(mask, [np.array(pts)], (255, 255, 255)).astype(np.uint8)
-
-            #pframe = cv2.polylines(frame, [np.array(pts)], True, (255, 255, 255))
 
             mask2 = self.getFace(frame)
 
@@ -200,12 +191,16 @@ class PandaFace():
     def __init__(self):
         super().__init__()
         self.FC = FaceCut()
+        self.top = 0
+        self.bottom = 0
+        self.right = 0
+        self.left = 0
 
     def memecut(self, meme):
         mask = self.FC.getFace(meme)
-
-        cv2.imshow("mask", mask * 255)
-        cv2.waitKey(0)
+        if debug:
+            cv2.imshow("mask", mask * 255)
+            cv2.waitKey(0)
 
         kernel = np.ones((3,3), dtype=np.uint8)
         mask = cv2.erode(mask, kernel, iterations=2)
@@ -236,31 +231,23 @@ class PandaFace():
             cv2.imwrite(name, res)
         return res
 
-    def facecut(self, face, memem, memef):
+    def facecut(self, face):
         mask, face, _, _, _, _ = self.FC.getFaceByLandmark(face)
         res = self.mf(mask, face, "face.png")
-        mres = self.mf(memem, memef, "tmp.png")
         image = self.constrast_img(res, name="conface.png")
-        cv2.imshow("imagelut", image)
-        cv2.waitKey(0)
-        memehist = myHistogram(mres)
-        facehist = myHistogram(image)
-        lut = histMatch(facehist.p, memehist.p)
-        image = cv2.LUT(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), lut)
-        cv2.imshow("tmplut", mres)
-        cv2.waitKey(0)
-        cv2.imshow("facelut", image)
-        cv2.waitKey(0)
-        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        if debug:
+            cv2.imshow("imagelut", image)
+            cv2.waitKey(0)
         return image, mask
 
     def compose(self, meme, face):
         memem, memef, top, bottom, left, right = self.FC.getFaceByLandmark(meme)
         neme = cv2.rectangle(copy.deepcopy(meme), (left, top), (right, bottom), (0, 255, 0), 2)
-        cv2.imshow("newme", neme)
-        cv2.waitKey(0)
+        if debug:
+            cv2.imshow("newme", neme)
+            cv2.waitKey(0)
         meme = self.memecut(meme)
-        face,mask = self.facecut(face, memem, memef)
+        face,mask = self.facecut(face)
         h,w = face.shape[:2]
         mh = bottom - top - 10
         mw = right - left - 10
@@ -282,22 +269,189 @@ class PandaFace():
             face = cv2.resize(face, (neww, newh))
             mask = cv2.resize(mask, (neww, newh))
         # print(newh, neww)
+        mres = self.mf(memem, memef, "tmp.png")
+        memehist = myHistogram(mres)
+        facehist = myHistogram(face)
+        lut = histMatch(facehist.p, memehist.p)
+        image = cv2.LUT(cv2.cvtColor(face, cv2.COLOR_BGR2GRAY), lut)
+        if debug:
+            cv2.imshow("tmplut", mres)
+            cv2.waitKey(0)
+            cv2.imshow("facelut", image)
+            cv2.waitKey(0)
+
         cx -= int(neww / 2)
         cy -= int(newh / 2)
-        cv2.imshow("meme", meme.astype(np.uint8))
-        cv2.waitKey(0)
+        if debug:
+            cv2.imshow("meme", meme.astype(np.uint8))
+            cv2.waitKey(0)
         meme[cy:cy+newh, cx:cx+neww] = face * (mask / 255) + meme[cy:cy+newh, cx:cx+neww] * (1 - mask / 255)
         meme.astype(np.uint8)
         return meme
 
+    def dmeme(self, memepath):
+        print(memepath)
+        meme = cv2.imread(memepath)
+        memem, memef, self.top, self.bottom, self.left, self.right = self.FC.getFaceByLandmark(meme)
+        # debug
+        neme = cv2.rectangle(copy.deepcopy(meme), (self.left, self.top), (self.right, self.left), (0, 255, 0), 2)
+        if debug:
+            cv2.imshow("newme", neme)
+            cv2.waitKey(0)
+
+        meme = self.memecut(meme)
+        return meme, memem, memef
+
+    def pickmeme(self):
+        memepathlist = glob.glob("origin/*.png")
+        for path in memepathlist:
+            yield path
+    
+    def dfaceAC(self, face, meme, memem, memef, textarea=None, ismatch=False):
+        face, mask = self.facecut(face)
+        h, w = face.shape[:2]
+        mh = self.bottom - self.top - 10
+        mw = self.right - self.left - 10
+        cx = int((self.right + self.left) / 2)
+        cy = int((self.top + self.bottom) / 2)
+        
+        neww = mw
+        newh = mh
+
+        if h / w < mh / mw:
+            neww = mw
+            newh = int(neww / w * h)
+            face = cv2.resize(face, (neww, newh))
+            mask = cv2.resize(mask, (neww, newh))
+        else:
+            newh = mh
+            neww = int(newh / h * w)
+            face = cv2.resize(face, (neww, newh))
+            mask = cv2.resize(mask, (neww, newh))
+        if ismatch:
+            mres = self.mf(memem, memef, "tmp.png")
+            memehist = myHistogram(mres)
+            facehist = myHistogram(face)
+            lut = histMatch(facehist.p, memehist.p)
+            image = cv2.LUT(cv2.cvtColor(face, cv2.COLOR_BGR2GRAY), lut)
+            if debug:
+                cv2.imshow("tmplut", mres)
+                cv2.waitKey(0)
+                cv2.imshow("facelut", image)
+                cv2.waitKey(0)
+            face = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        cx -= int(neww / 2)
+        cy -= int(newh / 2)
+        # debug
+        if debug:
+            cv2.imshow("meme", meme.astype(np.uint8))
+            cv2.waitKey(0)
+
+        meme[cy:cy+newh, cx:cx+neww] = face * (mask / 255) + meme[cy:cy+newh, cx:cx+neww] * (1 - mask / 255)
+        meme.astype(np.uint8)
+
+        h, w = meme.shape[:2]
+        fw = 500
+        fh = int(fw / w * h)
+
+        meme = cv2.resize(meme, (fw, fh))
+        
+        if textarea is not None:
+            meme = np.concatenate([meme, textarea], axis=0)
+
+        return meme
+
+    def addText(self, width, text, textColor=(0, 0, 0), textSize=50):
+
+        lt = len(text)
+        line = math.ceil(lt / 8)
+
+        area = np.ones([50 * line, width], dtype=np.uint8) * 255
+        area = Image.fromarray(cv2.cvtColor(area, cv2.COLOR_BGR2RGB))
+        draw = ImageDraw.Draw(area)
+
+        fontStyle = ImageFont.truetype(
+            "simsun.ttc", textSize, encoding="utf-8")
+
+        fline = lt % 8
+        if fline == 0:
+            fline = 8
+        
+        if fline + 8 <= 10:
+            lastword = text[-fline-8:]
+            text = text[0:-fline-8]
+            texts = []
+            for i in range(0,len(text), 8):
+                texts.append(text[i:i+8])
+            texts.append(lastword)
+        else:
+            texts  = [text[:fline]]
+            for i in range(fline, lt, 8):
+                texts.append(text[i:i+8])
+        
+        for row in range(len(texts)):
+            sx = (width - len(texts[row]) * 50 ) / 2
+            sy = row * 50
+            draw.text((sx, sy), texts[row], textColor, font=fontStyle)
+
+        return cv2.cvtColor(np.asarray(area), cv2.COLOR_RGB2BGR)
+
+
+    def resize(self, frame, ml):
+        h, w = frame.shape[:2]
+        while max(w, h) > ml:
+            w /= 2
+            h /= 2
+        frame = cv2.resize(frame, (int(w), int(h)))
+        return frame
+
+
+    def finalCompose(self, resource, text=None):
+
+        #pick out meme
+        memepath = next(self.pickmeme())
+
+        #deal with meme
+        meme, memem, memef = self.dmeme(memepath)
+
+        textarea = None
+        if text is not None:
+            textarea = self.addText(500, text)
+
+
+        #deal with user's res
+        filename, ext = os.path.splitext(resource)
+        print(filename, ext)
+        if ext == ".mp4":
+            gif = []
+            cap = cv2.VideoCapture(resource)
+            index = 0
+            ret = True
+            while cap.isOpened() and ret:
+                ret, frame = cap.read()
+                frame = self.resize(frame,800)
+                gif.append(cv2.cvtColor(self.dfaceAC(frame, meme, memem, memef, textarea),cv2.COLOR_BGR2RGB))
+                print(index)
+                index += 1
+                cut = 8
+                while cut > 0:
+                    ret, frame = cap.read()
+                    cut -= 1
+            print(len(gif))
+            imageio.mimsave("res"+filename+".gif", gif, fps=5)
+
+        else:
+            image = self.resize(cv2.imread(resource), 800)
+            image = self.dfaceAC(image, meme, memem, memef, textarea)
+            cv2.imwrite("res"+resource, image)
+            if debug:
+                cv2.imshow("res", image)
+                cv2.waitKey(0)
+
 def main():
     PF = PandaFace()
-    meme = cv2.imread("origin/p9.png")
-    face = cv2.imread("1.jpg")
 
-    meme = PF.compose(meme, face)
-    cv2.imshow("res", meme)
-    cv2.waitKey(0)
+    PF.finalCompose("testvideo.mp4", "我爱你,亲爱的姑娘")
 
     cv2.destroyAllWindows()
 
